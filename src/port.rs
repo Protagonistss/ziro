@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 use std::collections::HashMap;
 
@@ -17,17 +17,6 @@ pub struct ProcessInfo {
 pub struct PortInfo {
     pub port: u16,
     pub process: ProcessInfo,
-}
-
-/// 查找占用指定端口的进程
-pub fn find_process_by_port(port: u16) -> Result<ProcessInfo> {
-    let port_infos = find_processes_by_ports(&[port])?;
-    
-    port_infos
-        .into_iter()
-        .next()
-        .map(|info| info.process)
-        .ok_or_else(|| anyhow!("未找到占用端口 {} 的进程", port))
 }
 
 /// 查找占用多个端口的进程

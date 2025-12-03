@@ -13,8 +13,8 @@ pub struct Cli {
 pub enum Commands {
     /// 查找占用指定端口的进程
     Find {
-        /// 要查找的端口号
-        port: u16,
+        /// 要查找的端口号（可以指定多个）
+        ports: Vec<u16>,
     },
     /// 终止占用指定端口的进程
     Kill {

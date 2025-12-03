@@ -18,7 +18,7 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
     
     match cli.command {
-        Commands::Find { port } => handle_find(port)?,
+        Commands::Find { ports } => handle_find(ports)?,
         Commands::Kill { ports } => handle_kill(ports)?,
         Commands::List => handle_list()?,
     }
@@ -26,15 +26,18 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn handle_find(port: u16) -> Result<()> {
-    match port::find_process_by_port(port) {
-        Ok(process) => {
-            ui::display_process_info(port, &process);
-        }
-        Err(_) => {
-            ui::display_port_not_found(port);
-        }
+fn handle_find(ports: Vec<u16>) -> Result<()> {
+    if ports.is_empty() {
+        println!("请指定至少一个端口号");
+        return Ok(());
     }
+    
+    // 批量查找所有端口
+    let port_infos = port::find_processes_by_ports(&ports)?;
+    
+    // 使用树形结构展示
+    ui::display_ports_tree(&ports, port_infos);
+    
     Ok(())
 }
 
@@ -74,6 +77,6 @@ fn handle_kill(ports: Vec<u16>) -> Result<()> {
 
 fn handle_list() -> Result<()> {
     let port_infos = port::list_all_ports()?;
-    ui::display_port_list(port_infos);
+    ui::display_ports_tree_all(port_infos);
     Ok(())
 }

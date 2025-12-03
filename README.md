@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Crates.io](https://img.shields.io/crates/v/ziro.svg)](https://crates.io/crates/ziro)
-[![npm](https://img.shields.io/npm/v/ziro.svg)](https://www.npmjs.com/package/ziro)
+[![npm](https://img.shields.io/npm/v/@protagonistss/ziro.svg)](https://www.npmjs.com/package/@protagonistss/ziro)
 
 [English](#) | [简体中文](#)
 
@@ -36,17 +36,17 @@ cargo install ziro
 ### 使用 npm（Node.js 用户）
 
 ```bash
-npm install -g ziro
+npm install -g @protagonistss/ziro
 ```
 
 或使用其他包管理器：
 
 ```bash
 # 使用 yarn
-yarn global add ziro
+yarn global add @protagonistss/ziro
 
 # 使用 pnpm
-pnpm add -g ziro
+pnpm add -g @protagonistss/ziro
 ```
 
 ## 使用方法

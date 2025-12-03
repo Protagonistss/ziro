@@ -1,6 +1,6 @@
 use anyhow::Result;
-use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 use std::collections::HashMap;
+use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 
 /// 进程信息
 #[derive(Debug, Clone)]
@@ -23,19 +23,23 @@ pub struct PortInfo {
 pub fn find_processes_by_ports(ports: &[u16]) -> Result<Vec<PortInfo>> {
     let connections = get_network_connections()?;
     let mut sys = System::new_with_specifics(
-        RefreshKind::new().with_processes(ProcessRefreshKind::everything())
+        RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
     );
     sys.refresh_all();
-    
+
     let mut result = Vec::new();
-    
+
     for &port in ports {
         if let Some(&pid) = connections.get(&port) {
             if let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) {
                 let process_info = ProcessInfo {
                     pid,
                     name: process.name().to_string_lossy().to_string(),
-                    cmd: process.cmd().iter().map(|s| s.to_string_lossy().to_string()).collect(),
+                    cmd: process
+                        .cmd()
+                        .iter()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .collect(),
                     cpu_usage: process.cpu_usage(),
                     memory: process.memory(),
                 };
@@ -46,7 +50,7 @@ pub fn find_processes_by_ports(ports: &[u16]) -> Result<Vec<PortInfo>> {
             }
         }
     }
-    
+
     Ok(result)
 }
 
@@ -54,18 +58,22 @@ pub fn find_processes_by_ports(ports: &[u16]) -> Result<Vec<PortInfo>> {
 pub fn list_all_ports() -> Result<Vec<PortInfo>> {
     let connections = get_network_connections()?;
     let mut sys = System::new_with_specifics(
-        RefreshKind::new().with_processes(ProcessRefreshKind::everything())
+        RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
     );
     sys.refresh_all();
-    
+
     let mut result = Vec::new();
-    
+
     for (port, pid) in connections {
         if let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) {
             let process_info = ProcessInfo {
                 pid,
                 name: process.name().to_string_lossy().to_string(),
-                cmd: process.cmd().iter().map(|s| s.to_string_lossy().to_string()).collect(),
+                cmd: process
+                    .cmd()
+                    .iter()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .collect(),
                 cpu_usage: process.cpu_usage(),
                 memory: process.memory(),
             };
@@ -75,10 +83,10 @@ pub fn list_all_ports() -> Result<Vec<PortInfo>> {
             });
         }
     }
-    
+
     // 按端口号排序
     result.sort_by_key(|info| info.port);
-    
+
     Ok(result)
 }
 
@@ -86,14 +94,12 @@ pub fn list_all_ports() -> Result<Vec<PortInfo>> {
 #[cfg(target_os = "windows")]
 fn get_network_connections() -> Result<HashMap<u16, u32>> {
     use std::process::Command;
-    
-    let output = Command::new("netstat")
-        .args(["-ano"])
-        .output()?;
-    
+
+    let output = Command::new("netstat").args(["-ano"]).output()?;
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut connections = HashMap::new();
-    
+
     for line in stdout.lines().skip(4) {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 5 {
@@ -112,30 +118,30 @@ fn get_network_connections() -> Result<HashMap<u16, u32>> {
             }
         }
     }
-    
+
     Ok(connections)
 }
 
 #[cfg(target_os = "linux")]
 fn get_network_connections() -> Result<HashMap<u16, u32>> {
     use std::fs;
-    
+
     let mut connections = HashMap::new();
-    
+
     // 读取 TCP 连接
     for path in &["/proc/net/tcp", "/proc/net/tcp6"] {
         if let Ok(content) = fs::read_to_string(path) {
             parse_proc_net(&content, &mut connections)?;
         }
     }
-    
+
     // 读取 UDP 连接
     for path in &["/proc/net/udp", "/proc/net/udp6"] {
         if let Ok(content) = fs::read_to_string(path) {
             parse_proc_net(&content, &mut connections)?;
         }
     }
-    
+
     Ok(connections)
 }
 
@@ -169,9 +175,9 @@ fn parse_proc_net(content: &str, connections: &mut HashMap<u16, u32>) -> Result<
 fn find_pid_by_inode(inode: u64) -> Result<u32> {
     use std::fs;
     use std::path::PathBuf;
-    
+
     let proc_dir = fs::read_dir("/proc")?;
-    
+
     for entry in proc_dir.flatten() {
         if let Ok(file_name) = entry.file_name().into_string() {
             if let Ok(pid) = file_name.parse::<u32>() {
@@ -190,21 +196,19 @@ fn find_pid_by_inode(inode: u64) -> Result<u32> {
             }
         }
     }
-    
+
     Err(anyhow!("未找到 inode {} 对应的 PID", inode))
 }
 
 #[cfg(target_os = "macos")]
 fn get_network_connections() -> Result<HashMap<u16, u32>> {
     use std::process::Command;
-    
-    let output = Command::new("lsof")
-        .args(["-i", "-n", "-P"])
-        .output()?;
-    
+
+    let output = Command::new("lsof").args(["-i", "-n", "-P"]).output()?;
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut connections = HashMap::new();
-    
+
     for line in stdout.lines().skip(1) {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 9 {
@@ -224,7 +228,7 @@ fn get_network_connections() -> Result<HashMap<u16, u32>> {
             }
         }
     }
-    
+
     Ok(connections)
 }
 
@@ -232,4 +236,3 @@ fn get_network_connections() -> Result<HashMap<u16, u32>> {
 fn get_network_connections() -> Result<HashMap<u16, u32>> {
     Err(anyhow!("当前操作系统不支持网络连接查询"))
 }
-

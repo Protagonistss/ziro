@@ -197,7 +197,10 @@ fn find_pid_by_inode(inode: u64) -> Result<u32> {
         }
     }
 
-    Err(anyhow::Error::msg(format!("未找到 inode {} 对应的 PID", inode)))
+    Err(anyhow::Error::msg(format!(
+        "未找到 inode {} 对应的 PID",
+        inode
+    )))
 }
 
 #[cfg(target_os = "macos")]

@@ -5,7 +5,7 @@ use inquire::{Confirm, MultiSelect};
 
 /// 显示端口未被占用的消息
 pub fn display_port_not_found(port: u16) {
-    println!("{}", format!("端口 {} 未被占用", port).yellow());
+    println!("{}", format!("端口 {port} 未被占用").yellow());
 }
 
 /// 显示多个端口信息（交互式选择）
@@ -75,15 +75,11 @@ pub fn select_processes_to_kill(port_infos: Vec<PortInfo>) -> Result<Vec<PortInf
 pub fn display_kill_results(results: &[(u32, Result<()>)]) {
     for (pid, result) in results {
         match result {
-            Ok(()) => println!(
-                "{} {}",
-                "✓".green(),
-                format!("成功终止进程 {}", pid).green()
-            ),
+            Ok(()) => println!("{} {}", "✓".green(), format!("成功终止进程 {pid}").green()),
             Err(e) => println!(
                 "{} {}: {}",
                 "✗".red(),
-                format!("无法终止进程 {}", pid).red(),
+                format!("无法终止进程 {pid}").red(),
                 e
             ),
         }
@@ -130,7 +126,7 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
             println!(
                 "{} {} {}",
                 branch,
-                format!("{}", port).yellow().bold(),
+                format!("{port}").yellow().bold(),
                 "✓".green()
             );
 
@@ -165,14 +161,14 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
             println!(
                 "{} {} {} {}",
                 branch,
-                format!("{}", port).yellow().bold(),
+                format!("{port}").yellow().bold(),
                 "✗".red(),
                 "(空闲)".bright_black()
             );
         }
 
         if !is_last {
-            println!("{}", continuation);
+            println!("{continuation}");
         }
     }
 }
@@ -233,7 +229,7 @@ pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
         );
 
         if !is_last {
-            println!("{}", continuation);
+            println!("{continuation}");
         }
     }
 }

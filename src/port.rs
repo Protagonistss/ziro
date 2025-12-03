@@ -181,12 +181,12 @@ fn find_pid_by_inode(inode: u64) -> Result<u32> {
     for entry in proc_dir.flatten() {
         if let Ok(file_name) = entry.file_name().into_string() {
             if let Ok(pid) = file_name.parse::<u32>() {
-                let fd_dir = PathBuf::from(format!("/proc/{}/fd", pid));
+                let fd_dir = PathBuf::from(format!("/proc/{pid}/fd"));
                 if let Ok(fd_entries) = fs::read_dir(fd_dir) {
                     for fd_entry in fd_entries.flatten() {
                         if let Ok(link) = fs::read_link(fd_entry.path()) {
                             if let Some(link_str) = link.to_str() {
-                                if link_str.contains(&format!("socket:[{}]", inode)) {
+                                if link_str.contains(&format!("socket:[{inode}]")) {
                                     return Ok(pid);
                                 }
                             }
@@ -198,8 +198,7 @@ fn find_pid_by_inode(inode: u64) -> Result<u32> {
     }
 
     Err(anyhow::Error::msg(format!(
-        "未找到 inode {} 对应的 PID",
-        inode
+        "未找到 inode {inode} 对应的 PID"
     )))
 }
 

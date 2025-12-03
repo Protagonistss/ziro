@@ -14,10 +14,10 @@ pub fn kill_process(pid: u32) -> Result<()> {
         if process.kill() {
             Ok(())
         } else {
-            Err(anyhow!("无法终止进程 {} (可能需要管理员权限)", pid))
+            Err(anyhow!("无法终止进程 {pid} (可能需要管理员权限)"))
         }
     } else {
-        Err(anyhow!("进程 {} 不存在", pid))
+        Err(anyhow!("进程 {pid} 不存在"))
     }
 }
 

@@ -1,0 +1,38 @@
+# Rust 源代码和构建产物
+src/
+target/
+Cargo.toml
+Cargo.lock
+
+# Git 相关
+.git/
+.github/
+.gitignore
+
+# IDE 和编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+
+# 测试和临时文件
+test/
+*.test.js
+tmp/
+temp/
+
+# 文档草稿
+docs/
+*.draft.md
+
+# 计划文件
+*.plan.md
+

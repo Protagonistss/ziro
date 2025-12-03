@@ -2,6 +2,23 @@
 name = "ziro"
 version = "0.0.1"
 edition = "2024"
+authors = ["huangshan"]
+description = "跨平台端口管理工具 - 快速查找和终止占用端口的进程"
+repository = "https://github.com/Protagonistss/ziro"
+license = "MIT"
+keywords = ["port", "process", "network", "cli", "cross-platform"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
+exclude = [
+    "target/",
+    ".git/",
+    ".github/",
+    "*.log"
+]
+
+[[bin]]
+name = "ziro"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }

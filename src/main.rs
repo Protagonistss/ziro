@@ -38,7 +38,7 @@ fn run() -> Result<()> {
 
 fn display_version() {
     let version = env!("CARGO_PKG_VERSION");
-    println!("\x1b[1;36mziro\x1b[0m \x1b[1;37mv{}\x1b[0m", version);
+    println!("\x1b[1;36mziro\x1b[0m \x1b[1;37mv{version}\x1b[0m");
 }
 
 fn handle_find(ports: Vec<u16>) -> Result<()> {

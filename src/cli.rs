@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 /// Ziro - 跨平台端口管理工具
 #[derive(Parser)]
@@ -29,4 +30,18 @@ pub enum Commands {
     },
     /// 列出所有端口占用情况
     List,
+    /// 删除文件或目录（支持递归删除）
+    Remove {
+        /// 要删除的文件或目录路径（可以指定多个）
+        paths: Vec<PathBuf>,
+        /// 强制删除（不询问确认）
+        #[arg(short = 'f', long = "force")]
+        force: bool,
+        /// 递归删除目录及其内容
+        #[arg(short = 'r', long = "recursive")]
+        recursive: bool,
+        /// 显示将要删除的内容但不实际删除
+        #[arg(short = 'n', long = "dry-run")]
+        dry_run: bool,
+    },
 }

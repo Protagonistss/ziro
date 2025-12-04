@@ -1,3 +1,4 @@
+use crate::file::FileInfo;
 use crate::port::PortInfo;
 use anyhow::Result;
 use colored::*;
@@ -230,6 +231,128 @@ pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
 
         if !is_last {
             println!("{continuation}");
+        }
+    }
+}
+
+/// 显示删除预览
+pub fn display_deletion_preview(files: &[FileInfo]) {
+    let total_size: u64 = files.iter().map(|f| f.size).sum();
+    let (file_count, dir_count) = files.iter().fold((0, 0), |(files, dirs), f| {
+        if f.is_dir {
+            (files, dirs + 1)
+        } else {
+            (files + 1, dirs)
+        }
+    });
+
+    println!(
+        "{} {} {} {}",
+        "统计:".cyan().bold(),
+        format!("{file_count} 个文件").green(),
+        format!("{dir_count} 个目录").blue(),
+        format!("总大小: {}", crate::file::format_size(total_size)).yellow()
+    );
+    println!();
+
+    // 显示文件列表预览
+    let total = files.len().min(10); // 最多显示10个项目
+    for file in files.iter().take(total) {
+        let icon = if file.is_dir {
+            "📁".to_string()
+        } else if file.is_symlink {
+            "🔗".to_string()
+        } else {
+            "📄".to_string()
+        };
+
+        let size_str = if !file.is_dir && !file.is_symlink {
+            format!(" ({})", crate::file::format_size(file.size))
+        } else {
+            String::new()
+        };
+
+        let file_type = if file.is_dir {
+            "目录".blue()
+        } else if file.is_symlink {
+            "符号链接".magenta()
+        } else {
+            "文件".green()
+        };
+
+        println!(
+            "  {} {} {}{}",
+            icon,
+            file.path.display(),
+            file_type,
+            size_str.bright_black()
+        );
+    }
+
+    if files.len() > 10 {
+        println!("  ... 还有 {} 个项目", files.len() - 10);
+    }
+
+    println!();
+}
+
+/// 确认删除操作
+pub fn confirm_deletion(files: &[FileInfo], force: bool, dry_run: bool) -> Result<bool> {
+    if dry_run {
+        println!("{}", "🔍 预览模式 - 不会实际删除文件".blue().bold());
+        display_deletion_preview(files);
+        return Ok(true);
+    }
+
+    if force {
+        return Ok(true);
+    }
+
+    println!("{}", "⚠️  即将删除以下内容".red().bold());
+    display_deletion_preview(files);
+
+    let confirm = Confirm::new("确认删除这些内容？此操作不可撤销！")
+        .with_default(false)
+        .with_help_message("使用 --force 参数可以跳过此确认")
+        .prompt()?;
+
+    Ok(confirm)
+}
+
+/// 显示删除结果
+pub fn display_removal_results(results: &[(std::path::PathBuf, Result<()>)], dry_run: bool) {
+    let action = if dry_run { "预览删除" } else { "删除" };
+    let (success_count, error_count) =
+        results
+            .iter()
+            .fold((0, 0), |(success, error), (_, result)| {
+                if result.is_ok() {
+                    (success + 1, error)
+                } else {
+                    (success, error + 1)
+                }
+            });
+
+    println!(
+        "{} {} {}",
+        "操作完成".cyan().bold(),
+        format!("成功: {success_count}").green(),
+        format!("失败: {error_count}").red()
+    );
+
+    for (path, result) in results {
+        match result {
+            Ok(()) => println!(
+                "{} {}",
+                "✓".green(),
+                format!("{} {}", action, path.display()).bright_black()
+            ),
+            Err(e) => println!(
+                "{} {} {}",
+                "✗".red(),
+                format!("无法删除 {}", path.display()).red(),
+                e
+            ),
         }
     }
 }

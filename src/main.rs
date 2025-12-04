@@ -1,4 +1,5 @@
 mod cli;
+mod file;
 mod port;
 mod process;
 mod ui;
@@ -6,6 +7,7 @@ mod ui;
 use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Commands};
+use colored::Colorize;
 
 fn main() {
     if let Err(e) = run() {
@@ -27,6 +29,12 @@ fn run() -> Result<()> {
         Some(Commands::Find { ports }) => handle_find(ports)?,
         Some(Commands::Kill { ports }) => handle_kill(ports)?,
         Some(Commands::List) => handle_list()?,
+        Some(Commands::Remove {
+            paths,
+            force,
+            recursive,
+            dry_run,
+        }) => handle_remove(paths, force, recursive, dry_run)?,
         None => {
             // 当没有提供子命令时显示帮助信息
             println!("使用 'ziro --help' 查看可用命令");
@@ -93,5 +101,42 @@ fn handle_kill(ports: Vec<u16>) -> Result<()> {
 fn handle_list() -> Result<()> {
     let port_infos = port::list_all_ports()?;
     ui::display_ports_tree_all(port_infos);
+    Ok(())
+}
+
+fn handle_remove(
+    paths: Vec<std::path::PathBuf>,
+    force: bool,
+    recursive: bool,
+    dry_run: bool,
+) -> Result<()> {
+    if paths.is_empty() {
+        println!("请指定至少一个文件或目录路径");
+        return Ok(());
+    }
+
+    // 验证路径安全性
+    file::validate_paths(&paths)?;
+
+    // 收集要删除的文件信息
+    let files = file::collect_files_to_remove(&paths, recursive)?;
+
+    if files.is_empty() {
+        println!("没有找到匹配的文件或目录");
+        return Ok(());
+    }
+
+    // 显示预览并确认
+    if !ui::confirm_deletion(&files, force, dry_run)? {
+        println!("{}", "操作已取消".bright_yellow());
+        return Ok(());
+    }
+
+    // 执行删除
+    let results = file::remove_files(&files, dry_run);
+
+    // 显示结果
+    ui::display_removal_results(&results, dry_run);
+
     Ok(())
 }

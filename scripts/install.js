@@ -3,6 +3,7 @@
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 const { detectPlatform, getBinaryName, getDownloadUrl } = require('./detect-platform');
 
 // 从 package.json 读取版本号
@@ -85,6 +86,28 @@ async function download(url, dest) {
   });
 }
 
+async function extractZip(zipPath, extractDir) {
+  return new Promise((resolve, reject) => {
+    console.log(`解压: ${zipPath}`);
+
+    try {
+      // 使用系统内置的 unzip 命令（跨平台）
+      if (process.platform === 'win32') {
+        // Windows: 使用 PowerShell 的 Expand-Archive
+        execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extractDir}' -Force"`, { stdio: 'inherit' });
+      } else {
+        // Unix-like systems: 使用 unzip 命令
+        execSync(`unzip -o '${zipPath}' -d '${extractDir}'`, { stdio: 'inherit' });
+      }
+
+      console.log('解压完成');
+      resolve();
+    } catch (error) {
+      reject(new Error(`解压失败: ${error.message}`));
+    }
+  });
+}
+
 async function install() {
   try {
     console.log('正在安装 ziro...');
@@ -101,16 +124,29 @@ async function install() {
     
     // 生成二进制文件名和路径
     const binaryName = getBinaryName(platformInfo);
+    const zipPath = path.join(binDir, binaryName);
     const binaryPath = path.join(binDir, platformInfo.raw.platform === 'win32' ? 'ziro.exe' : 'ziro');
-    
+
     // 构建下载 URL
     const downloadUrl = getDownloadUrl(version, platformInfo);
-    
-    // 下载二进制文件
+
+    // 下载 zip 文件
     try {
-      await download(downloadUrl, binaryPath);
+      await download(downloadUrl, zipPath);
+
+      // 解压 zip 文件
+      await extractZip(zipPath, binDir);
+
+      // 删除 zip 文件
+      fs.unlinkSync(zipPath);
+
+      // 检查二进制文件是否存在
+      if (!fs.existsSync(binaryPath)) {
+        throw new Error('解压后未找到二进制文件');
+      }
+
     } catch (error) {
-      console.error('\n下载失败:', error.message);
+      console.error('\n安装失败:', error.message);
       console.error('\n可能的原因:');
       console.error('1. 该版本的预编译二进制文件尚未发布');
       console.error('2. 网络连接问题');

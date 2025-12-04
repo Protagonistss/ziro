@@ -42,15 +42,11 @@ function detectPlatform() {
 
 function getBinaryName(platformInfo) {
   const { platform, arch } = platformInfo;
-  
-  // 生成二进制文件名
-  // 例如: ziro-windows-x86_64.exe, ziro-linux-x86_64, ziro-macos-aarch64
-  let binaryName = `ziro-${platform}-${arch}`;
-  
-  if (platform === 'windows') {
-    binaryName += '.exe';
-  }
-  
+
+  // 生成 zip 包文件名
+  // 例如: linux-aarch64.zip, windows-x86_64.zip, macos-x86_64.zip
+  let binaryName = `${platform}-${arch}.zip`;
+
   return binaryName;
 }
 

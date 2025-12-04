@@ -17,10 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
       - name: Get version from tag
         id: get_version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
       - name: Create Release
         id: create_release
@@ -151,7 +155,8 @@ jobs:
           # 输出平台名到 GITHUB_OUTPUT，供后续步骤使用
           echo "platform_dir=${PLATFORM_DIR}" >> $GITHUB_OUTPUT
 
-      - name: Create zip package
+      - name: Create zip package (Unix)
+        if: matrix.platform.os != 'windows'
         shell: bash
         run: |
           # 从上一步骤获取平台名
@@ -160,15 +165,20 @@ jobs:
           cd release-package
           zip -r ${PLATFORM_DIR}.zip ${PLATFORM_DIR}/
 
-      - name: Upload Release Asset
-        shell: bash
+      - name: Create zip package (Windows)
+        if: matrix.platform.os == 'windows'
+        shell: powershell
         run: |
           # 从上一步骤获取平台名
-          PLATFORM_DIR="${{ steps.prepare.outputs.platform_dir }}"
-          echo "Uploading release asset for platform: ${PLATFORM_DIR}"
+          $platformDir = "${{ steps.prepare.outputs.platform_dir }}"
+          Write-Host "Creating zip for platform: $platformDir"
+          Compress-Archive -Path "release-package\$platformDir\*" -DestinationPath "release-package\$platformDir.zip" -Force
 
-          # 使用 GitHub CLI 上传文件
-          gh release upload ${{ github.ref }} release-package/${PLATFORM_DIR}.zip
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release-package/${{ steps.prepare.outputs.platform_dir }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

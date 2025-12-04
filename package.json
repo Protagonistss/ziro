@@ -33,6 +33,8 @@
     "bin/",
     "scripts/",
     "README.md",
+    "README.en.md",
+    "README.zh.md",
     "LICENSE"
   ],
   "engines": {

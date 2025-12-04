@@ -115,21 +115,57 @@ jobs:
         if: matrix.platform.target != 'aarch64-unknown-linux-gnu'
         run: cargo build --release --target ${{ matrix.platform.target }}
 
-      - name: Prepare binary
+      - name: Prepare binary and package
         shell: bash
         run: |
-          cd target/${{ matrix.platform.target }}/release
+          # 创建发布目录
+          mkdir -p release-package
+
+          # 根据平台确定目录名
           if [ "${{ matrix.platform.os }}" = "windows" ]; then
-            cp ${{ matrix.platform.binary_name }} ${{ matrix.platform.asset_name }}
+            PLATFORM_DIR="windows-x64"
+          elif [ "${{ matrix.platform.os }}" = "macos" ]; then
+            if [ "${{ matrix.platform.arch }}" = "aarch64" ]; then
+              PLATFORM_DIR="macos-aarch64"
+            else
+              PLATFORM_DIR="macos-x64"
+            fi
+          elif [ "${{ matrix.platform.arch }}" = "aarch64" ]; then
+            PLATFORM_DIR="linux-aarch64"
           else
-            cp ${{ matrix.platform.binary_name }} ${{ matrix.platform.asset_name }}
-            chmod +x ${{ matrix.platform.asset_name }}
+            PLATFORM_DIR="linux-x64"
           fi
 
+          # 保存平台名到文件
+          echo "PLATFORM_DIR=${PLATFORM_DIR}" >> platform_dir.txt
+
+          # 创建平台目录结构
+          mkdir -p release-package/${PLATFORM_DIR}
+
+          # 复制二进制文件并重命名为 ziro
+          cp target/${{ matrix.platform.target }}/release/${{ matrix.platform.binary_name }} release-package/${PLATFORM_DIR}/ziro
+
+          # 如果是 Linux 或 macOS，添加执行权限
+          if [ "${{ matrix.platform.os }}" != "windows" ]; then
+            chmod +x release-package/${PLATFORM_DIR}/ziro
+          fi
+
+      - name: Create zip package
+        shell: bash
+        run: |
+          # 读取平台名
+          source platform_dir.txt
+          cd release-package
+          zip -r ${PLATFORM_DIR}.zip ${PLATFORM_DIR}/
+
       - name: Upload Release Asset
-        uses: softprops/action-gh-release@v1
-        with:
-          files: target/${{ matrix.platform.target }}/release/${{ matrix.platform.asset_name }}
+        shell: bash
+        run: |
+          # 读取平台名
+          source platform_dir.txt
+
+          # 使用 GitHub CLI 上传文件
+          gh release upload ${{ github.ref }} release-package/${PLATFORM_DIR}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

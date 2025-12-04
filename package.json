@@ -1,5 +1,5 @@
 {
-  "name": "@protagonistss/ziro",
+  "name": "@ithinku/ziro",
   "version": "0.0.1",
   "description": "跨平台端口管理工具 - 快速查找和终止占用端口的进程",
   "main": "bin/ziro.js",

@@ -36,17 +36,17 @@ cargo install ziro
 ### 使用 npm（Node.js 用户）
 
 ```bash
-npm install -g @protagonistss/ziro
+npm install -g @ithinku/ziro
 ```
 
 或使用其他包管理器：
 
 ```bash
 # 使用 yarn
-yarn global add @protagonistss/ziro
+yarn global add @ithinku/ziro
 
 # 使用 pnpm
-pnpm add -g @protagonistss/ziro
+pnpm add -g @ithinku/ziro
 ```
 
 ## 使用方法

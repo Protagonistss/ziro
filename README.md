@@ -27,7 +27,7 @@ cargo install ziro
 
 **npm:**
 ```bash
-npm install -g @protagonistss/ziro
+npm install -g @ithinku/ziro
 ```
 
 ### Usage

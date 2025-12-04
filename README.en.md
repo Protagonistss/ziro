@@ -36,17 +36,17 @@ cargo install ziro
 ### Using npm (Node.js Users)
 
 ```bash
-npm install -g @protagonistss/ziro
+npm install -g @ithinku/ziro
 ```
 
 Or use other package managers:
 
 ```bash
 # Using yarn
-yarn global add @protagonistss/ziro
+yarn global add @ithinku/ziro
 
 # Using pnpm
-pnpm add -g @protagonistss/ziro
+pnpm add -g @ithinku/ziro
 ```
 
 ## Usage

@@ -4,9 +4,15 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(name = "ziro")]
 #[command(about = "查找和终止占用端口的进程", long_about = None)]
+#[command(version = env!("CARGO_PKG_VERSION"))]
+#[command(disable_version_flag = true)]
 pub struct Cli {
+    /// 显示版本信息
+    #[arg(short = 'v', long = "version")]
+    pub version: bool,
+
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
 #[derive(Subcommand)]

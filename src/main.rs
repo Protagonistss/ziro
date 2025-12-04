@@ -17,13 +17,28 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse();
 
+    // 如果请求版本信息，显示并退出
+    if cli.version {
+        display_version();
+        return Ok(());
+    }
+
     match cli.command {
-        Commands::Find { ports } => handle_find(ports)?,
-        Commands::Kill { ports } => handle_kill(ports)?,
-        Commands::List => handle_list()?,
+        Some(Commands::Find { ports }) => handle_find(ports)?,
+        Some(Commands::Kill { ports }) => handle_kill(ports)?,
+        Some(Commands::List) => handle_list()?,
+        None => {
+            // 当没有提供子命令时显示帮助信息
+            println!("使用 'ziro --help' 查看可用命令");
+        }
     }
 
     Ok(())
+}
+
+fn display_version() {
+    let version = env!("CARGO_PKG_VERSION");
+    println!("\x1b[1;36mziro\x1b[0m \x1b[1;37mv{}\x1b[0m", version);
 }
 
 fn handle_find(ports: Vec<u16>) -> Result<()> {

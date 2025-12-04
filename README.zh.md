@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Crates.io](https://img.shields.io/crates/v/ziro.svg)](https://crates.io/crates/ziro)
-[![npm](https://img.shields.io/npm/v/@protagonistss/ziro.svg)](https://www.npmjs.com/package/@protagonistss/ziro)
+[![npm](https://img.shields.io/npm/v/@ithinku/ziro.svg)](https://www.npmjs.com/package/@ithinku/ziro)
 
 [English](README.en.md) | [简体中文](README.zh.md)
 

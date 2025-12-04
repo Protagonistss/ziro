@@ -116,6 +116,7 @@ jobs:
         run: cargo build --release --target ${{ matrix.platform.target }}
 
       - name: Prepare binary and package
+        id: prepare
         shell: bash
         run: |
           # 创建发布目录
@@ -136,9 +137,6 @@ jobs:
             PLATFORM_DIR="linux-x64"
           fi
 
-          # 保存平台名到文件
-          echo "PLATFORM_DIR=${PLATFORM_DIR}" >> platform_dir.txt
-
           # 创建平台目录结构
           mkdir -p release-package/${PLATFORM_DIR}
 
@@ -150,19 +148,24 @@ jobs:
             chmod +x release-package/${PLATFORM_DIR}/ziro
           fi
 
+          # 输出平台名到 GITHUB_OUTPUT，供后续步骤使用
+          echo "platform_dir=${PLATFORM_DIR}" >> $GITHUB_OUTPUT
+
       - name: Create zip package
         shell: bash
         run: |
-          # 读取平台名
-          source platform_dir.txt
+          # 从上一步骤获取平台名
+          PLATFORM_DIR="${{ steps.prepare.outputs.platform_dir }}"
+          echo "Creating zip for platform: ${PLATFORM_DIR}"
           cd release-package
           zip -r ${PLATFORM_DIR}.zip ${PLATFORM_DIR}/
 
       - name: Upload Release Asset
         shell: bash
         run: |
-          # 读取平台名
-          source platform_dir.txt
+          # 从上一步骤获取平台名
+          PLATFORM_DIR="${{ steps.prepare.outputs.platform_dir }}"
+          echo "Uploading release asset for platform: ${PLATFORM_DIR}"
 
           # 使用 GitHub CLI 上传文件
           gh release upload ${{ github.ref }} release-package/${PLATFORM_DIR}.zip

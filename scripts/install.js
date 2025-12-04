@@ -140,7 +140,18 @@ async function install() {
       // 删除 zip 文件
       fs.unlinkSync(zipPath);
 
-      // 检查二进制文件是否存在
+      // 检查二进制文件是否存在，如果存在解压后的原始文件，重命名
+      const extractedBinaryPath = path.join(binDir, 'ziro');
+      if (fs.existsSync(extractedBinaryPath) && platformInfo.raw.platform === 'win32') {
+        // Windows下需要.exe扩展名
+        const targetPath = path.join(binDir, 'ziro.exe');
+        if (fs.existsSync(targetPath)) {
+          fs.unlinkSync(targetPath);
+        }
+        fs.renameSync(extractedBinaryPath, targetPath);
+      }
+
+      // 再次检查二进制文件是否存在
       if (!fs.existsSync(binaryPath)) {
         throw new Error('解压后未找到二进制文件');
       }

@@ -7,22 +7,20 @@ const fs = require('fs');
 // 获取二进制文件路径
 function getBinaryPath() {
   const platform = process.platform;
-  const arch = process.arch;
-  
+
   let binaryName = 'ziro';
   if (platform === 'win32') {
     binaryName = 'ziro.exe';
   }
-  
-  // 检查二进制文件是否存在
-  const binaryPath = path.join(__dirname, '..', 'bin', binaryName);
-  
+
+  const binaryPath = path.join(__dirname, binaryName);
+
   if (!fs.existsSync(binaryPath)) {
     console.error('错误: 找不到 ziro 二进制文件');
     console.error('请尝试重新安装: npm install -g ziro');
     process.exit(1);
   }
-  
+
   return binaryPath;
 }
 

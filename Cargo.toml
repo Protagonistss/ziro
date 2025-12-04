@@ -1,6 +1,6 @@
 [package]
 name = "ziro"
-version = "0.0.1"
+version = "0.0.3"
 edition = "2024"
 authors = ["huangshan"]
 description = "跨平台端口管理工具 - 快速查找和终止占用端口的进程"

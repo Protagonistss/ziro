@@ -43,9 +43,17 @@ function detectPlatform() {
 function getBinaryName(platformInfo) {
   const { platform, arch } = platformInfo;
 
-  // 生成 zip 包文件名
-  // 例如: linux-aarch64.zip, windows-x86_64.zip, macos-x86_64.zip
-  let binaryName = `${platform}-${arch}.zip`;
+  // 架构名称映射：将 x86_64 映射为 x64 以匹配现有构建包命名
+  const archNameMap = {
+    'x86_64': 'x64',
+    'aarch64': 'aarch64' // 保持不变
+  };
+
+  const mappedArch = archNameMap[arch] || arch;
+
+  // 生成 zip 包文件名，匹配现有构建包命名
+  // 例如: linux-aarch64.zip, windows-x64.zip, macos-x64.zip
+  let binaryName = `${platform}-${mappedArch}.zip`;
 
   return binaryName;
 }

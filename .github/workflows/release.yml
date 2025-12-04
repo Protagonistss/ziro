@@ -103,15 +103,17 @@ jobs:
         with:
           platforms: arm64
 
-      - name: Build
+      - name: Build (Linux ARM64)
+        if: matrix.platform.target == 'aarch64-unknown-linux-gnu'
+        shell: bash
         run: |
-          if [[ "${{ matrix.platform.target }}" == "aarch64-unknown-linux-gnu" ]]; then
-            export CC=aarch64-linux-gnu-gcc
-            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-            cargo build --release --target ${{ matrix.platform.target }}
-          else
-            cargo build --release --target ${{ matrix.platform.target }}
-          fi
+          export CC=aarch64-linux-gnu-gcc
+          export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+          cargo build --release --target ${{ matrix.platform.target }}
+
+      - name: Build (Other platforms)
+        if: matrix.platform.target != 'aarch64-unknown-linux-gnu'
+        run: cargo build --release --target ${{ matrix.platform.target }}
 
       - name: Prepare binary
         shell: bash

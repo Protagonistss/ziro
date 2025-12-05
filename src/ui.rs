@@ -1,6 +1,6 @@
 use crate::file::FileInfo;
-use crate::port::PortInfo;
 use crate::icons::icons;
+use crate::port::PortInfo;
 use anyhow::Result;
 use colored::*;
 use inquire::{Confirm, MultiSelect};
@@ -77,7 +77,11 @@ pub fn select_processes_to_kill(port_infos: Vec<PortInfo>) -> Result<Vec<PortInf
 pub fn display_kill_results(results: &[(u32, Result<()>)]) {
     for (pid, result) in results {
         match result {
-            Ok(()) => println!("{} {}", icons().check().green(), format!("成功终止进程 {pid}").green()),
+            Ok(()) => println!(
+                "{} {}",
+                icons().check().green(),
+                format!("成功终止进程 {pid}").green()
+            ),
             Err(e) => println!(
                 "{} {}: {}",
                 icons().cross().red(),
@@ -108,7 +112,11 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
         return;
     }
 
-    println!("{} {}", icons().lightning().cyan(), "端口查询结果".cyan().bold());
+    println!(
+        "{} {}",
+        icons().lightning().cyan(),
+        "端口查询结果".cyan().bold()
+    );
     println!();
 
     // 创建端口到进程信息的映射
@@ -301,7 +309,11 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
 /// 确认删除操作
 pub fn confirm_deletion(files: &[FileInfo], force: bool, dry_run: bool) -> Result<bool> {
     if dry_run {
-        println!("{} {}", icons().search().blue(), "预览模式 - 不会实际删除文件".blue().bold());
+        println!(
+            "{} {}",
+            icons().search().blue(),
+            "预览模式 - 不会实际删除文件".blue().bold()
+        );
         display_deletion_preview(files);
         return Ok(true);
     }
@@ -310,7 +322,11 @@ pub fn confirm_deletion(files: &[FileInfo], force: bool, dry_run: bool) -> Resul
         return Ok(true);
     }
 
-    println!("{} {}", icons().warning().red(), "即将删除以下内容".red().bold());
+    println!(
+        "{} {}",
+        icons().warning().red(),
+        "即将删除以下内容".red().bold()
+    );
     display_deletion_preview(files);
 
     let confirm = Confirm::new("确认删除这些内容？此操作不可撤销！")

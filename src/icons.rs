@@ -71,11 +71,12 @@ impl Icons {
         // 检查终端类型
         if let Ok(term) = env::var("TERM") {
             // 这些终端通常支持 Unicode
-            if term.contains("xterm") ||
-               term.contains("screen") ||
-               term.contains("tmux") ||
-               term.contains("alacritty") ||
-               term.contains("kitty") {
+            if term.contains("xterm")
+                || term.contains("screen")
+                || term.contains("tmux")
+                || term.contains("alacritty")
+                || term.contains("kitty")
+            {
                 return true;
             }
         }
@@ -89,7 +90,9 @@ impl Icons {
 
             // 检查是否在 Windows Terminal 中运行
             if let Ok(program_files) = env::var("ProgramFiles") {
-                let wt_path = std::path::Path::new(&program_files).join("WindowsApps").join("Microsoft.WindowsTerminal");
+                let wt_path = std::path::Path::new(&program_files)
+                    .join("WindowsApps")
+                    .join("Microsoft.WindowsTerminal");
                 if wt_path.exists() {
                     return true;
                 }

@@ -4,6 +4,7 @@ mod icons;
 mod port;
 mod process;
 mod theme;
+mod top;
 mod ui;
 
 use anyhow::Result;
@@ -40,6 +41,13 @@ fn run() -> Result<()> {
             verbose,
             anyway,
         }) => handle_remove(paths, force, recursive, dry_run, verbose, anyway)?,
+        Some(Commands::Top {
+            interval,
+            limit,
+            cpu,
+            cmd,
+            once,
+        }) => handle_top(interval, limit, cpu, cmd, once)?,
         None => {
             // 当没有提供子命令时显示帮助信息
             println!("使用 'ziro --help' 查看可用命令");
@@ -126,6 +134,17 @@ fn handle_list() -> Result<()> {
     let port_infos = port::list_all_ports()?;
     ui::display_ports_tree_all(port_infos);
     Ok(())
+}
+
+fn handle_top(interval: f32, limit: usize, cpu: bool, cmd: bool, once: bool) -> Result<()> {
+    let opts = top::TopOptions {
+        interval,
+        limit,
+        show_cpu: cpu,
+        show_cmd: cmd,
+        once,
+    };
+    top::run_top(opts)
 }
 
 fn handle_remove(

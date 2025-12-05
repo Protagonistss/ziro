@@ -1,8 +1,11 @@
 use crate::file::FileInfo;
 use crate::port::PortInfo;
 use crate::theme::Theme;
+use crate::top::ProcessView;
 use anyhow::Result;
+use console::{Alignment, pad_str};
 use inquire::{Confirm, MultiSelect};
+use std::io::{self, Write};
 
 /// 显示端口未被占用的消息
 pub fn display_port_not_found(port: u16) {
@@ -471,4 +474,94 @@ pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Resu
         theme.success(format!("成功: {success_count}")),
         theme.error(format!("失败: {error_count}"))
     );
+}
+
+/// 实时进程内存展示
+pub fn display_top(
+    processes: &[ProcessView],
+    refresh: u64,
+    interval: f32,
+    show_cpu: bool,
+    show_cmd: bool,
+) {
+    let theme = Theme::new();
+
+    // 列宽配置（使用 console::pad_str，支持中日韩宽字符）
+    const RANK_W: usize = 4;
+    const NAME_W: usize = 26;
+    const PID_W: usize = 10;
+    const MEM_W: usize = 10;
+    const CPU_W: usize = 8;
+
+    // 清屏并移动光标到左上角
+    print!("\x1b[2J\x1b[H");
+    let _ = io::stdout().flush();
+
+    println!("{} {}", theme.icon_lightning(), theme.title("进程内存占用"));
+    println!(
+        "{}",
+        theme.muted(format!(
+            "刷新次数: {} | 间隔: {:.1}s | 显示前 {} | Ctrl+C 退出",
+            refresh,
+            interval,
+            processes.len()
+        ))
+    );
+    println!();
+
+    let header_rank = pad_str("序号", RANK_W, Alignment::Left, None);
+    let header_name = pad_str("名称", NAME_W, Alignment::Left, None);
+    let header_pid = pad_str("PID", PID_W, Alignment::Left, None);
+    let header_mem = pad_str("内存", MEM_W, Alignment::Right, None);
+    let header_cpu = pad_str("CPU", CPU_W, Alignment::Right, None);
+    let header_cmd = if show_cmd { "命令" } else { "" };
+
+    println!("{header_rank} {header_name} {header_pid} {header_mem} {header_cpu} {header_cmd}");
+
+    let sep_len = RANK_W + NAME_W + PID_W + MEM_W + CPU_W + 5; // spaces between columns
+    println!("{}", theme.muted("—".repeat(sep_len)));
+
+    for (index, process) in processes.iter().enumerate() {
+        let rank = index + 1;
+        let rank_str = match rank {
+            1 => theme.highlight(rank.to_string()),
+            2 => theme.warn(rank.to_string()),
+            3 => theme.info(rank.to_string()),
+            _ => theme.muted(rank.to_string()),
+        };
+
+        let mem_str = crate::file::format_size(process.memory_bytes);
+        let cpu_str = if show_cpu {
+            format!("{:.1}%", process.cpu)
+        } else {
+            "-".to_string()
+        };
+
+        let name = truncate_string(&process.name, NAME_W.saturating_sub(2));
+        let pid_str = theme.muted(process.pid.to_string());
+        let cmd_display = if show_cmd && !process.cmd.is_empty() {
+            format!(" {}", theme.muted(truncate_string(&process.cmd, 60)))
+        } else {
+            String::new()
+        };
+
+        let name_styled = theme.success(name);
+        let mem_styled = theme.warn(mem_str.clone());
+        let cpu_styled = theme.accent(cpu_str.clone());
+
+        let name_cell = pad_str(&name_styled, NAME_W, Alignment::Left, None);
+        let pid_cell = pad_str(&pid_str, PID_W, Alignment::Left, None);
+        let mem_cell = pad_str(&mem_styled, MEM_W, Alignment::Right, None);
+        let cpu_cell = pad_str(&cpu_styled, CPU_W, Alignment::Right, None);
+
+        println!(
+            "{} {} {} {} {}{}",
+            pad_str(&rank_str, RANK_W, Alignment::Left, None),
+            name_cell,
+            pid_cell,
+            mem_cell,
+            cpu_cell,
+            cmd_display
+        );
+    }
 }

@@ -53,4 +53,22 @@ pub enum Commands {
         #[arg(long = "anyway")]
         anyway: bool,
     },
+    /// 实时查看进程内存占用（类似 top）
+    Top {
+        /// 刷新间隔（秒）
+        #[arg(long = "interval", default_value_t = 1.0)]
+        interval: f32,
+        /// 显示的进程数量
+        #[arg(long = "limit", default_value_t = 20)]
+        limit: usize,
+        /// 同时显示 CPU 占用
+        #[arg(long = "cpu")]
+        cpu: bool,
+        /// 显示进程的命令行
+        #[arg(long = "cmd")]
+        cmd: bool,
+        /// 只输出一次，不持续刷新
+        #[arg(long = "once")]
+        once: bool,
+    },
 }

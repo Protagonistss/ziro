@@ -147,10 +147,7 @@ pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
         match std::process::Command::new("powershell")
             .args([
                 "-Command",
-                &format!(
-                    "Get-Process | Where-Object {{ $_.MainModule.FileName -eq '{}' }} | Select-Object Id",
-                    path_str
-                )
+                &format!("Get-Process | Where-Object {{ $_.MainModule.FileName -eq '{path_str}' }} | Select-Object Id")
             ])
             .output()
         {

@@ -1,5 +1,5 @@
-use crate::icons::icons;
 use crate::process;
+use crate::theme::Theme;
 use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -137,6 +137,7 @@ pub fn remove_files(
     verbose: bool,
     anyway: bool,
 ) -> Vec<(PathBuf, Result<()>)> {
+    let theme = Theme::new();
     let mut results = Vec::new();
 
     for file in files {
@@ -152,7 +153,7 @@ pub fn remove_files(
                             if verbose {
                                 println!(
                                     "{} 文件被占用，终止进程并删除: {} (占用进程: {})",
-                                    icons().fire(),
+                                    theme.icon_fire(),
                                     file.path.display(),
                                     pids.iter()
                                         .map(|p| p.to_string())
@@ -169,7 +170,7 @@ pub fn remove_files(
                             if killed_count > 0 && verbose {
                                 println!(
                                     "{} 成功终止 {}/{} 个占用进程",
-                                    icons().check(),
+                                    theme.icon_success(),
                                     killed_count,
                                     pids.len()
                                 );

@@ -3,6 +3,7 @@ mod file;
 mod icons;
 mod port;
 mod process;
+mod theme;
 mod ui;
 
 use anyhow::Result;

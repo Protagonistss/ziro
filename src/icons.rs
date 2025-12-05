@@ -179,26 +179,6 @@ impl StyledEmoji {
         }
     }
 
-    /// 获取绿色样式的成功图标
-    pub fn green(&self) -> String {
-        style(self.as_str()).green().to_string()
-    }
-
-    /// 获取红色样式的错误图标
-    pub fn red(&self) -> String {
-        style(self.as_str()).red().to_string()
-    }
-
-    /// 蓝色样式
-    pub fn blue(&self) -> String {
-        style(self.as_str()).blue().to_string()
-    }
-
-    /// 青色样式
-    pub fn cyan(&self) -> String {
-        style(self.as_str()).cyan().to_string()
-    }
-
     /// 黄色样式
     #[allow(dead_code)]
     pub fn yellow(&self) -> String {

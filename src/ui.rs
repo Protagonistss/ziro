@@ -1,19 +1,21 @@
 use crate::file::FileInfo;
-use crate::icons::icons;
 use crate::port::PortInfo;
+use crate::theme::Theme;
 use anyhow::Result;
-use colored::*;
 use inquire::{Confirm, MultiSelect};
 
 /// 显示端口未被占用的消息
 pub fn display_port_not_found(port: u16) {
-    println!("{}", format!("端口 {port} 未被占用").yellow());
+    let theme = Theme::new();
+    println!("{}", theme.warn(format!("端口 {port} 未被占用")));
 }
 
 /// 显示多个端口信息（交互式选择）
 pub fn select_processes_to_kill(port_infos: Vec<PortInfo>) -> Result<Vec<PortInfo>> {
+    let theme = Theme::new();
+
     if port_infos.is_empty() {
-        println!("{}", "未找到任何占用指定端口的进程".yellow());
+        println!("{}", theme.warn("未找到任何占用指定端口的进程"));
         return Ok(vec![]);
     }
 
@@ -56,7 +58,7 @@ pub fn select_processes_to_kill(port_infos: Vec<PortInfo>) -> Result<Vec<PortInf
     }
 
     if result.is_empty() {
-        println!("{}", "未选择任何进程".yellow());
+        println!("{}", theme.warn("未选择任何进程"));
         return Ok(vec![]);
     }
 
@@ -68,24 +70,26 @@ pub fn select_processes_to_kill(port_infos: Vec<PortInfo>) -> Result<Vec<PortInf
     if confirm {
         Ok(result)
     } else {
-        println!("{}", "操作已取消".yellow());
+        println!("{}", theme.warn("操作已取消"));
         Ok(vec![])
     }
 }
 
 /// 显示终止结果
 pub fn display_kill_results(results: &[(u32, Result<()>)]) {
+    let theme = Theme::new();
+
     for (pid, result) in results {
         match result {
             Ok(()) => println!(
                 "{} {}",
-                icons().check().green(),
-                format!("成功终止进程 {pid}").green()
+                theme.icon_success(),
+                theme.success(format!("成功终止进程 {pid}"))
             ),
             Err(e) => println!(
                 "{} {}: {}",
-                icons().cross().red(),
-                format!("无法终止进程 {pid}").red(),
+                theme.icon_error(),
+                theme.error(format!("无法终止进程 {pid}")),
                 e
             ),
         }
@@ -103,7 +107,8 @@ fn truncate_string(s: &str, max_len: usize) -> String {
 
 /// 显示错误信息
 pub fn display_error(error: &anyhow::Error) {
-    eprintln!("{} {}", "错误:".red().bold(), error);
+    let theme = Theme::new();
+    eprintln!("{} {}", theme.error_bold("错误:"), error);
 }
 
 /// 树形结构展示多个端口信息
@@ -112,11 +117,9 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
         return;
     }
 
-    println!(
-        "{} {}",
-        icons().lightning().cyan(),
-        "端口查询结果".cyan().bold()
-    );
+    let theme = Theme::new();
+
+    println!("{} {}", theme.icon_lightning(), theme.title("端口查询结果"));
     println!();
 
     // 创建端口到进程信息的映射
@@ -136,17 +139,17 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
             println!(
                 "{} {} {}",
                 branch,
-                format!("{port}").yellow().bold(),
-                icons().check().green()
+                theme.highlight(port.to_string()),
+                theme.icon_success()
             );
 
             // 进程信息
             println!(
                 "{}├─ {}: {} ({})",
                 continuation,
-                "进程".cyan(),
-                info.process.name.green(),
-                format!("{}", info.process.pid).bright_black()
+                theme.info("进程"),
+                theme.success(&info.process.name),
+                theme.muted(info.process.pid.to_string())
             );
 
             // 命令
@@ -154,26 +157,26 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
             println!(
                 "{}├─ {}: {}",
                 continuation,
-                "命令".cyan(),
-                cmd.bright_black()
+                theme.info("命令"),
+                theme.muted(cmd)
             );
 
             // 资源使用
             println!(
                 "{}└─ {}: {} CPU, {} 内存",
                 continuation,
-                "资源".cyan(),
-                format!("{:.1}%", info.process.cpu_usage).magenta(),
-                format!("{} MB", info.process.memory / 1024 / 1024).magenta()
+                theme.info("资源"),
+                theme.accent(format!("{:.1}%", info.process.cpu_usage)),
+                theme.accent(format!("{} MB", info.process.memory / 1024 / 1024))
             );
         } else {
             // 端口空闲
             println!(
                 "{} {} {} {}",
                 branch,
-                format!("{port}").yellow().bold(),
-                icons().cross().red(),
-                "(空闲)".bright_black()
+                theme.highlight(port.to_string()),
+                theme.icon_error(),
+                theme.muted("(空闲)")
             );
         }
 
@@ -185,16 +188,18 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
 
 /// 树形结构展示所有端口占用情况（用于 list 命令）
 pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
+    let theme = Theme::new();
+
     if port_infos.is_empty() {
-        println!("{}", "当前没有端口被占用".yellow());
+        println!("{}", theme.warn("当前没有端口被占用"));
         return;
     }
 
     println!(
         "{} {} {}",
-        icons().lightning().cyan(),
-        "端口占用情况".cyan().bold(),
-        format!("(共 {} 个)", port_infos.len()).bright_black()
+        theme.icon_lightning(),
+        theme.title("端口占用情况"),
+        theme.muted(format!("(共 {} 个)", port_infos.len()))
     );
     println!();
 
@@ -208,17 +213,17 @@ pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
         println!(
             "{} {} {}",
             branch,
-            format!("{}", info.port).yellow().bold(),
-            icons().check().green()
+            theme.highlight(info.port.to_string()),
+            theme.icon_success()
         );
 
         // 进程信息
         println!(
             "{}├─ {}: {} ({})",
             continuation,
-            "进程".cyan(),
-            info.process.name.green(),
-            format!("{}", info.process.pid).bright_black()
+            theme.info("进程"),
+            theme.success(&info.process.name),
+            theme.muted(info.process.pid.to_string())
         );
 
         // 命令
@@ -226,17 +231,17 @@ pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
         println!(
             "{}├─ {}: {}",
             continuation,
-            "命令".cyan(),
-            cmd.bright_black()
+            theme.info("命令"),
+            theme.muted(cmd)
         );
 
         // 资源使用
         println!(
             "{}└─ {}: {} CPU, {} 内存",
             continuation,
-            "资源".cyan(),
-            format!("{:.1}%", info.process.cpu_usage).magenta(),
-            format!("{} MB", info.process.memory / 1024 / 1024).magenta()
+            theme.info("资源"),
+            theme.accent(format!("{:.1}%", info.process.cpu_usage)),
+            theme.accent(format!("{} MB", info.process.memory / 1024 / 1024))
         );
 
         if !is_last {
@@ -247,6 +252,7 @@ pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
 
 /// 显示删除预览
 pub fn display_deletion_preview(files: &[FileInfo]) {
+    let theme = Theme::new();
     let total_size: u64 = files.iter().map(|f| f.size).sum();
     let (file_count, dir_count) = files.iter().fold((0, 0), |(files, dirs), f| {
         if f.is_dir {
@@ -258,10 +264,10 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
 
     println!(
         "{} {} {} {}",
-        "统计:".cyan().bold(),
-        format!("{file_count} 个文件").green(),
-        format!("{dir_count} 个目录").blue(),
-        format!("总大小: {}", crate::file::format_size(total_size)).yellow()
+        theme.title("统计:"),
+        theme.success(format!("{file_count} 个文件")),
+        theme.blue(format!("{dir_count} 个目录")),
+        theme.warn(format!("总大小: {}", crate::file::format_size(total_size)))
     );
     println!();
 
@@ -269,25 +275,26 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
     let total = files.len().min(10); // 最多显示10个项目
     for file in files.iter().take(total) {
         let icon = if file.is_dir {
-            icons().folder().to_string()
+            theme.icon_folder()
         } else if file.is_symlink {
-            icons().link().to_string()
+            theme.icon_link()
         } else {
-            icons().file().to_string()
+            theme.icon_file()
         };
 
         let size_str = if !file.is_dir && !file.is_symlink {
-            format!(" ({})", crate::file::format_size(file.size))
+            let size = format!(" ({})", crate::file::format_size(file.size));
+            theme.muted(size)
         } else {
             String::new()
         };
 
         let file_type = if file.is_dir {
-            "目录".blue()
+            theme.blue("目录")
         } else if file.is_symlink {
-            "符号链接".magenta()
+            theme.accent("符号链接")
         } else {
-            "文件".green()
+            theme.success("文件")
         };
 
         println!(
@@ -295,12 +302,15 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
             icon,
             file.path.display(),
             file_type,
-            size_str.bright_black()
+            size_str
         );
     }
 
     if files.len() > 10 {
-        println!("  ... 还有 {} 个项目", files.len() - 10);
+        println!(
+            "{}",
+            theme.muted(format!("  ... 还有 {} 个项目", files.len() - 10))
+        );
     }
 
     println!();
@@ -308,11 +318,13 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
 
 /// 确认删除操作
 pub fn confirm_deletion(files: &[FileInfo], force: bool, dry_run: bool) -> Result<bool> {
+    let theme = Theme::new();
+
     if dry_run {
         println!(
             "{} {}",
-            icons().search().blue(),
-            "预览模式 - 不会实际删除文件".blue().bold()
+            theme.icon_search(),
+            theme.info_bold("预览模式 - 不会实际删除文件")
         );
         display_deletion_preview(files);
         return Ok(true);
@@ -324,8 +336,8 @@ pub fn confirm_deletion(files: &[FileInfo], force: bool, dry_run: bool) -> Resul
 
     println!(
         "{} {}",
-        icons().warning().red(),
-        "即将删除以下内容".red().bold()
+        theme.icon_warning(),
+        theme.error_bold("即将删除以下内容")
     );
     display_deletion_preview(files);
 
@@ -343,6 +355,7 @@ pub fn display_removal_results(
     dry_run: bool,
     verbose: bool,
 ) {
+    let theme = Theme::new();
     let action = if dry_run { "预览删除" } else { "删除" };
     let (success_count, error_count) =
         results
@@ -359,9 +372,9 @@ pub fn display_removal_results(
     if !verbose {
         println!(
             "{} {} {}",
-            "操作完成".cyan().bold(),
-            format!("成功: {success_count}").green(),
-            format!("失败: {error_count}").red()
+            theme.title("操作完成"),
+            theme.success(format!("成功: {success_count}")),
+            theme.error(format!("失败: {error_count}"))
         );
 
         // 只有在错误模式下才显示失败的文件
@@ -370,8 +383,8 @@ pub fn display_removal_results(
                 if let Err(e) = result {
                     println!(
                         "{} {} {}",
-                        icons().cross().red(),
-                        format!("无法删除 {}", path.display()).red(),
+                        theme.icon_error(),
+                        theme.error(format!("无法删除 {}", path.display())),
                         e
                     );
                 }
@@ -383,22 +396,22 @@ pub fn display_removal_results(
     // Verbose 模式：显示所有详细信息
     println!(
         "{} {} {}",
-        "操作完成".cyan().bold(),
-        format!("成功: {success_count}").green(),
-        format!("失败: {error_count}").red()
+        theme.title("操作完成"),
+        theme.success(format!("成功: {success_count}")),
+        theme.error(format!("失败: {error_count}"))
     );
 
     for (path, result) in results {
         match result {
             Ok(()) => println!(
                 "{} {}",
-                icons().check().green(),
-                format!("{} {}", action, path.display()).bright_black()
+                theme.icon_success(),
+                theme.muted(format!("{} {}", action, path.display()))
             ),
             Err(e) => println!(
                 "{} {} {}",
-                icons().cross().red(),
-                format!("无法删除 {}", path.display()).red(),
+                theme.icon_error(),
+                theme.error(format!("无法删除 {}", path.display())),
                 e
             ),
         }
@@ -407,23 +420,25 @@ pub fn display_removal_results(
 
 /// 显示强制终止结果
 pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Result<()>)]) {
-    println!("{} {}", icons().fire().red(), "强制终止进程".red().bold());
+    let theme = Theme::new();
+
+    println!("{} {}", theme.icon_fire(), theme.error_bold("强制终止进程"));
     println!();
 
     // 首先显示要终止的进程信息
-    println!("{}", "目标进程:".cyan().bold());
+    println!("{}", theme.title("目标进程:"));
     for info in port_infos {
         println!(
             "  端口 {} - {} (PID: {})",
-            info.port.to_string().yellow(),
-            info.process.name.green(),
-            format!("{}", info.process.pid).bright_black()
+            theme.highlight(info.port.to_string()),
+            theme.success(&info.process.name),
+            theme.muted(info.process.pid.to_string())
         );
     }
     println!();
 
     // 显示终止结果
-    println!("{}", "终止结果:".cyan().bold());
+    println!("{}", theme.title("终止结果:"));
     let mut success_count = 0;
     let mut error_count = 0;
 
@@ -433,16 +448,16 @@ pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Resu
                 success_count += 1;
                 println!(
                     "{} {}",
-                    icons().check().green(),
-                    format!("成功强制终止进程 {pid}").green()
+                    theme.icon_success(),
+                    theme.success(format!("成功强制终止进程 {pid}"))
                 );
             }
             Err(e) => {
                 error_count += 1;
                 println!(
                     "{} {}: {}",
-                    icons().cross().red(),
-                    format!("无法强制终止进程 {pid}").red(),
+                    theme.icon_error(),
+                    theme.error(format!("无法强制终止进程 {pid}")),
                     e
                 );
             }
@@ -452,8 +467,8 @@ pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Resu
     println!();
     println!(
         "{} {} {}",
-        "强制终止完成".cyan().bold(),
-        format!("成功: {success_count}").green(),
-        format!("失败: {error_count}").red()
+        theme.title("强制终止完成"),
+        theme.success(format!("成功: {success_count}")),
+        theme.error(format!("失败: {error_count}"))
     );
 }

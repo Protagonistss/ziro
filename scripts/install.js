@@ -10,6 +10,52 @@ const { detectPlatform, getBinaryName, getDownloadUrl } = require('./detect-plat
 const packageJson = require('../package.json');
 const version = packageJson.version;
 
+/**
+ * 在 bin 目录及其子目录中查找二进制文件
+ * @param {string} binDir - bin 目录路径
+ * @param {Object} platformInfo - 平台信息
+ * @returns {string|null} 找到的二进制文件路径，未找到返回 null
+ */
+function findBinaryInBinDir(binDir, platformInfo) {
+  const expectedBinaryName = platformInfo.raw.platform === 'win32' ? 'ziro.exe' : 'ziro';
+
+  // 首先检查期望位置
+  const directPath = path.join(binDir, expectedBinaryName);
+  if (fs.existsSync(directPath)) {
+    return directPath;
+  }
+
+  // 递归搜索子目录
+  function searchInDir(currentDir, depth = 0) {
+    if (depth > 3) return null; // 限制搜索深度，防止过深的递归
+
+    try {
+      const items = fs.readdirSync(currentDir);
+
+      for (const item of items) {
+        const itemPath = path.join(currentDir, item);
+        const stat = fs.statSync(itemPath);
+
+        if (stat.isDirectory()) {
+          // 递归搜索子目录
+          const result = searchInDir(itemPath, depth + 1);
+          if (result) return result;
+        } else if (stat.isFile() && (item === 'ziro' || item === 'ziro.exe')) {
+          // 找到匹配的二进制文件
+          console.log(`在 ${itemPath} 找到二进制文件`);
+          return itemPath;
+        }
+      }
+    } catch (error) {
+      console.log(`搜索目录 ${currentDir} 时出错: ${error.message}`);
+    }
+
+    return null;
+  }
+
+  return searchInDir(binDir);
+}
+
 async function download(url, dest) {
   return new Promise((resolve, reject) => {
     console.log(`下载: ${url}`);
@@ -140,28 +186,65 @@ async function install() {
       // 删除 zip 文件
       fs.unlinkSync(zipPath);
 
-      // 检查二进制文件是否存在，如果存在解压后的原始文件，重命名
-      const extractedBinaryPath = path.join(binDir, 'ziro');
-      if (fs.existsSync(extractedBinaryPath) && platformInfo.raw.platform === 'win32') {
-        // Windows下需要.exe扩展名
-        const targetPath = path.join(binDir, 'ziro.exe');
-        if (fs.existsSync(targetPath)) {
-          fs.unlinkSync(targetPath);
+      // 查找解压后的二进制文件（支持子目录）
+      const foundBinaryPath = findBinaryInBinDir(binDir, platformInfo);
+
+      if (foundBinaryPath) {
+        console.log(`找到二进制文件: ${foundBinaryPath}`);
+
+        // 如果找到的文件不在期望位置，移动它
+        if (foundBinaryPath !== binaryPath) {
+          console.log(`移动二进制文件到: ${binaryPath}`);
+
+          // 如果目标文件已存在，先删除
+          if (fs.existsSync(binaryPath)) {
+            fs.unlinkSync(binaryPath);
+          }
+
+          fs.renameSync(foundBinaryPath, binaryPath);
         }
-        fs.renameSync(extractedBinaryPath, targetPath);
       }
 
-      // 再次检查二进制文件是否存在
+      // 最终检查二进制文件是否存在
       if (!fs.existsSync(binaryPath)) {
-        throw new Error('解压后未找到二进制文件');
+        throw new Error(`解压后未找到二进制文件，期望位置: ${binaryPath}`);
       }
 
     } catch (error) {
       console.error('\n安装失败:', error.message);
+
+      // 添加调试信息
+      console.error('\n调试信息:');
+      console.error(`平台信息: ${platformInfo.platform} (${platformInfo.arch})`);
+      console.error(`期望的二进制文件路径: ${binaryPath}`);
+      console.error(`bin目录: ${binDir}`);
+
+      // 列出bin目录内容帮助调试
+      try {
+        if (fs.existsSync(binDir)) {
+          const items = fs.readdirSync(binDir);
+          console.error('bin目录内容:', items.join(', ') || '(空)');
+
+          // 检查是否有子目录
+          items.forEach(item => {
+            const itemPath = path.join(binDir, item);
+            if (fs.statSync(itemPath).isDirectory()) {
+              const subItems = fs.readdirSync(itemPath);
+              console.error(`${item}/子目录内容:`, subItems.join(', ') || '(空)');
+            }
+          });
+        } else {
+          console.error('bin目录不存在');
+        }
+      } catch (debugError) {
+        console.error('无法读取目录内容:', debugError.message);
+      }
+
       console.error('\n可能的原因:');
       console.error('1. 该版本的预编译二进制文件尚未发布');
       console.error('2. 网络连接问题');
       console.error('3. 当前平台/架构不受支持');
+      console.error('4. 二进制文件命名或路径不匹配');
       console.error('\n替代方案:');
       console.error('1. 使用 Cargo 安装: cargo install ziro');
       console.error('2. 从源码编译: git clone https://github.com/Protagonistss/ziro && cd ziro && cargo build --release');

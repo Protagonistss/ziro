@@ -356,3 +356,56 @@ pub fn display_removal_results(results: &[(std::path::PathBuf, Result<()>)], dry
         }
     }
 }
+
+/// 显示强制终止结果
+pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Result<()>)]) {
+    println!("{}", "🔥 强制终止进程".red().bold());
+    println!();
+
+    // 首先显示要终止的进程信息
+    println!("{}", "目标进程:".cyan().bold());
+    for info in port_infos {
+        println!(
+            "  端口 {} - {} (PID: {})",
+            info.port.to_string().yellow(),
+            info.process.name.green(),
+            format!("{}", info.process.pid).bright_black()
+        );
+    }
+    println!();
+
+    // 显示终止结果
+    println!("{}", "终止结果:".cyan().bold());
+    let mut success_count = 0;
+    let mut error_count = 0;
+
+    for (pid, result) in results {
+        match result {
+            Ok(()) => {
+                success_count += 1;
+                println!(
+                    "{} {}",
+                    "✓".green(),
+                    format!("成功强制终止进程 {pid}").green()
+                );
+            }
+            Err(e) => {
+                error_count += 1;
+                println!(
+                    "{} {}: {}",
+                    "✗".red(),
+                    format!("无法强制终止进程 {pid}").red(),
+                    e
+                );
+            }
+        }
+    }
+
+    println!();
+    println!(
+        "{} {} {}",
+        "强制终止完成".cyan().bold(),
+        format!("成功: {success_count}").green(),
+        format!("失败: {error_count}").red()
+    );
+}

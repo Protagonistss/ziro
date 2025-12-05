@@ -27,7 +27,7 @@ fn run() -> Result<()> {
 
     match cli.command {
         Some(Commands::Find { ports }) => handle_find(ports)?,
-        Some(Commands::Kill { ports }) => handle_kill(ports)?,
+        Some(Commands::Kill { ports, force }) => handle_kill(ports, force)?,
         Some(Commands::List) => handle_list()?,
         Some(Commands::Remove {
             paths,
@@ -64,7 +64,7 @@ fn handle_find(ports: Vec<u16>) -> Result<()> {
     Ok(())
 }
 
-fn handle_kill(ports: Vec<u16>) -> Result<()> {
+fn handle_kill(ports: Vec<u16>, force: bool) -> Result<()> {
     if ports.is_empty() {
         println!("请指定至少一个端口号");
         return Ok(());
@@ -81,19 +81,28 @@ fn handle_kill(ports: Vec<u16>) -> Result<()> {
         return Ok(());
     }
 
-    // 交互式选择要终止的进程
-    let selected = ui::select_processes_to_kill(port_infos)?;
+    if force {
+        // 强制模式：直接终止所有找到的进程
+        let pids: Vec<u32> = port_infos.iter().map(|info| info.process.pid).collect();
+        let results = process::kill_processes_force(&pids);
 
-    if selected.is_empty() {
-        return Ok(());
+        // 显示强制模式的结果
+        ui::display_kill_results_force(&port_infos, &results);
+    } else {
+        // 交互模式：让用户选择要终止的进程
+        let selected = ui::select_processes_to_kill(port_infos)?;
+
+        if selected.is_empty() {
+            return Ok(());
+        }
+
+        // 终止选中的进程
+        let pids: Vec<u32> = selected.iter().map(|info| info.process.pid).collect();
+        let results = process::kill_processes(&pids);
+
+        // 显示结果
+        ui::display_kill_results(&results);
     }
-
-    // 终止选中的进程
-    let pids: Vec<u32> = selected.iter().map(|info| info.process.pid).collect();
-    let results = process::kill_processes(&pids);
-
-    // 显示结果
-    ui::display_kill_results(&results);
 
     Ok(())
 }

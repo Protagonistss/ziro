@@ -27,6 +27,9 @@ pub enum Commands {
     Kill {
         /// 要终止的端口号（可以指定多个）
         ports: Vec<u16>,
+        /// 强制终止（不询问确认）
+        #[arg(short = 'f', long = "force")]
+        force: bool,
     },
     /// 列出所有端口占用情况
     List,

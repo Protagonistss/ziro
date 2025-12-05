@@ -30,24 +30,24 @@ pub fn find_processes_by_ports(ports: &[u16]) -> Result<Vec<PortInfo>> {
     let mut result = Vec::new();
 
     for &port in ports {
-        if let Some(&pid) = connections.get(&port) {
-            if let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) {
-                let process_info = ProcessInfo {
-                    pid,
-                    name: process.name().to_string_lossy().to_string(),
-                    cmd: process
-                        .cmd()
-                        .iter()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .collect(),
-                    cpu_usage: process.cpu_usage(),
-                    memory: process.memory(),
-                };
-                result.push(PortInfo {
-                    port,
-                    process: process_info,
-                });
-            }
+        if let Some(&pid) = connections.get(&port)
+            && let Some(process) = sys.process(sysinfo::Pid::from_u32(pid))
+        {
+            let process_info = ProcessInfo {
+                pid,
+                name: process.name().to_string_lossy().to_string(),
+                cmd: process
+                    .cmd()
+                    .iter()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .collect(),
+                cpu_usage: process.cpu_usage(),
+                memory: process.memory(),
+            };
+            result.push(PortInfo {
+                port,
+                process: process_info,
+            });
         }
     }
 
@@ -105,16 +105,13 @@ fn get_network_connections() -> Result<HashMap<u16, u32>> {
         if parts.len() >= 5 {
             // TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1234
             // TCP    [::]:135               [::]:0                 LISTENING       1234
-            if let Some(local_addr) = parts.get(1) {
-                if let Some(port_str) = local_addr.rsplit(':').next() {
-                    if let Ok(port) = port_str.parse::<u16>() {
-                        if let Some(pid_str) = parts.last() {
-                            if let Ok(pid) = pid_str.parse::<u32>() {
-                                connections.insert(port, pid);
-                            }
-                        }
-                    }
-                }
+            if let Some(local_addr) = parts.get(1)
+                && let Some(port_str) = local_addr.rsplit(':').next()
+                && let Ok(port) = port_str.parse::<u16>()
+                && let Some(pid_str) = parts.last()
+                && let Ok(pid) = pid_str.parse::<u32>()
+            {
+                connections.insert(port, pid);
             }
         }
     }

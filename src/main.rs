@@ -1,5 +1,6 @@
 mod cli;
 mod file;
+mod icons;
 mod port;
 mod process;
 mod ui;

@@ -1,4 +1,5 @@
 use crate::process;
+use crate::icons::icons;
 use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -150,7 +151,8 @@ pub fn remove_files(
                         Ok(pids) if !pids.is_empty() => {
                             if verbose {
                                 println!(
-                                    "🔥 文件被占用，终止进程并删除: {} (占用进程: {})",
+                                    "{} 文件被占用，终止进程并删除: {} (占用进程: {})",
+                                    icons().fire(),
                                     file.path.display(),
                                     pids.iter()
                                         .map(|p| p.to_string())
@@ -165,7 +167,7 @@ pub fn remove_files(
                                 kill_results.iter().filter(|(_, r)| r.is_ok()).count();
 
                             if killed_count > 0 && verbose {
-                                println!("✓ 成功终止 {}/{} 个占用进程", killed_count, pids.len());
+                                println!("{} 成功终止 {}/{} 个占用进程", icons().check(), killed_count, pids.len());
                             }
 
                             // 等待一小段时间让进程完全退出

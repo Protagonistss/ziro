@@ -1,5 +1,6 @@
 use crate::file::FileInfo;
 use crate::port::PortInfo;
+use crate::icons::icons;
 use anyhow::Result;
 use colored::*;
 use inquire::{Confirm, MultiSelect};
@@ -76,10 +77,10 @@ pub fn select_processes_to_kill(port_infos: Vec<PortInfo>) -> Result<Vec<PortInf
 pub fn display_kill_results(results: &[(u32, Result<()>)]) {
     for (pid, result) in results {
         match result {
-            Ok(()) => println!("{} {}", "✓".green(), format!("成功终止进程 {pid}").green()),
+            Ok(()) => println!("{} {}", icons().check().green(), format!("成功终止进程 {pid}").green()),
             Err(e) => println!(
                 "{} {}: {}",
-                "✗".red(),
+                icons().cross().red(),
                 format!("无法终止进程 {pid}").red(),
                 e
             ),
@@ -107,7 +108,7 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
         return;
     }
 
-    println!("{}", "⚡ 端口查询结果".cyan().bold());
+    println!("{} {}", icons().lightning().cyan(), "端口查询结果".cyan().bold());
     println!();
 
     // 创建端口到进程信息的映射
@@ -128,7 +129,7 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
                 "{} {} {}",
                 branch,
                 format!("{port}").yellow().bold(),
-                "✓".green()
+                icons().check().green()
             );
 
             // 进程信息
@@ -163,7 +164,7 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
                 "{} {} {} {}",
                 branch,
                 format!("{port}").yellow().bold(),
-                "✗".red(),
+                icons().cross().red(),
                 "(空闲)".bright_black()
             );
         }
@@ -182,8 +183,9 @@ pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
     }
 
     println!(
-        "{} {}",
-        "⚡ 端口占用情况".cyan().bold(),
+        "{} {} {}",
+        icons().lightning().cyan(),
+        "端口占用情况".cyan().bold(),
         format!("(共 {} 个)", port_infos.len()).bright_black()
     );
     println!();
@@ -199,7 +201,7 @@ pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
             "{} {} {}",
             branch,
             format!("{}", info.port).yellow().bold(),
-            "✓".green()
+            icons().check().green()
         );
 
         // 进程信息
@@ -259,11 +261,11 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
     let total = files.len().min(10); // 最多显示10个项目
     for file in files.iter().take(total) {
         let icon = if file.is_dir {
-            "📁".to_string()
+            icons().folder().to_string()
         } else if file.is_symlink {
-            "🔗".to_string()
+            icons().link().to_string()
         } else {
-            "📄".to_string()
+            icons().file().to_string()
         };
 
         let size_str = if !file.is_dir && !file.is_symlink {
@@ -299,7 +301,7 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
 /// 确认删除操作
 pub fn confirm_deletion(files: &[FileInfo], force: bool, dry_run: bool) -> Result<bool> {
     if dry_run {
-        println!("{}", "🔍 预览模式 - 不会实际删除文件".blue().bold());
+        println!("{} {}", icons().search().blue(), "预览模式 - 不会实际删除文件".blue().bold());
         display_deletion_preview(files);
         return Ok(true);
     }
@@ -308,7 +310,7 @@ pub fn confirm_deletion(files: &[FileInfo], force: bool, dry_run: bool) -> Resul
         return Ok(true);
     }
 
-    println!("{}", "⚠️  即将删除以下内容".red().bold());
+    println!("{} {}", icons().warning().red(), "即将删除以下内容".red().bold());
     display_deletion_preview(files);
 
     let confirm = Confirm::new("确认删除这些内容？此操作不可撤销！")
@@ -352,7 +354,7 @@ pub fn display_removal_results(
                 if let Err(e) = result {
                     println!(
                         "{} {} {}",
-                        "✗".red(),
+                        icons().cross().red(),
                         format!("无法删除 {}", path.display()).red(),
                         e
                     );
@@ -374,12 +376,12 @@ pub fn display_removal_results(
         match result {
             Ok(()) => println!(
                 "{} {}",
-                "✓".green(),
+                icons().check().green(),
                 format!("{} {}", action, path.display()).bright_black()
             ),
             Err(e) => println!(
                 "{} {} {}",
-                "✗".red(),
+                icons().cross().red(),
                 format!("无法删除 {}", path.display()).red(),
                 e
             ),
@@ -389,7 +391,7 @@ pub fn display_removal_results(
 
 /// 显示强制终止结果
 pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Result<()>)]) {
-    println!("{}", "🔥 强制终止进程".red().bold());
+    println!("{} {}", icons().fire().red(), "强制终止进程".red().bold());
     println!();
 
     // 首先显示要终止的进程信息
@@ -415,7 +417,7 @@ pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Resu
                 success_count += 1;
                 println!(
                     "{} {}",
-                    "✓".green(),
+                    icons().check().green(),
                     format!("成功强制终止进程 {pid}").green()
                 );
             }
@@ -423,7 +425,7 @@ pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Resu
                 error_count += 1;
                 println!(
                     "{} {}: {}",
-                    "✗".red(),
+                    icons().cross().red(),
                     format!("无法强制终止进程 {pid}").red(),
                     e
                 );

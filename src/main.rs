@@ -34,7 +34,9 @@ fn run() -> Result<()> {
             force,
             recursive,
             dry_run,
-        }) => handle_remove(paths, force, recursive, dry_run)?,
+            verbose,
+            anyway,
+        }) => handle_remove(paths, force, recursive, dry_run, verbose, anyway)?,
         None => {
             // 当没有提供子命令时显示帮助信息
             println!("使用 'ziro --help' 查看可用命令");
@@ -118,6 +120,8 @@ fn handle_remove(
     force: bool,
     recursive: bool,
     dry_run: bool,
+    verbose: bool,
+    anyway: bool,
 ) -> Result<()> {
     if paths.is_empty() {
         println!("请指定至少一个文件或目录路径");
@@ -142,10 +146,10 @@ fn handle_remove(
     }
 
     // 执行删除
-    let results = file::remove_files(&files, dry_run);
+    let results = file::remove_files(&files, dry_run, verbose, anyway);
 
     // 显示结果
-    ui::display_removal_results(&results, dry_run);
+    ui::display_removal_results(&results, dry_run, verbose);
 
     Ok(())
 }

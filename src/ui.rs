@@ -320,7 +320,11 @@ pub fn confirm_deletion(files: &[FileInfo], force: bool, dry_run: bool) -> Resul
 }
 
 /// 显示删除结果
-pub fn display_removal_results(results: &[(std::path::PathBuf, Result<()>)], dry_run: bool) {
+pub fn display_removal_results(
+    results: &[(std::path::PathBuf, Result<()>)],
+    dry_run: bool,
+    verbose: bool,
+) {
     let action = if dry_run { "预览删除" } else { "删除" };
     let (success_count, error_count) =
         results
@@ -333,6 +337,32 @@ pub fn display_removal_results(results: &[(std::path::PathBuf, Result<()>)], dry
                 }
             });
 
+    // 如果不是 verbose 模式，只显示汇总信息
+    if !verbose {
+        println!(
+            "{} {} {}",
+            "操作完成".cyan().bold(),
+            format!("成功: {success_count}").green(),
+            format!("失败: {error_count}").red()
+        );
+
+        // 只有在错误模式下才显示失败的文件
+        if error_count > 0 {
+            for (path, result) in results {
+                if let Err(e) = result {
+                    println!(
+                        "{} {} {}",
+                        "✗".red(),
+                        format!("无法删除 {}", path.display()).red(),
+                        e
+                    );
+                }
+            }
+        }
+        return;
+    }
+
+    // Verbose 模式：显示所有详细信息
     println!(
         "{} {} {}",
         "操作完成".cyan().bold(),

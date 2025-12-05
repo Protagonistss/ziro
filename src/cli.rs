@@ -46,5 +46,11 @@ pub enum Commands {
         /// 显示将要删除的内容但不实际删除
         #[arg(short = 'n', long = "dry-run")]
         dry_run: bool,
+        /// 显示详细的删除过程信息
+        #[arg(long = "verbose")]
+        verbose: bool,
+        /// 强制删除被进程占用的文件（需要终止相关进程）
+        #[arg(long = "anyway")]
+        anyway: bool,
     },
 }

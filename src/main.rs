@@ -9,6 +9,7 @@ use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Commands};
 use colored::Colorize;
+use console::Style;
 
 fn main() {
     if let Err(e) = run() {
@@ -49,10 +50,16 @@ fn run() -> Result<()> {
 
 fn display_version() {
     let version = env!("CARGO_PKG_VERSION");
+
+    // 使用 console 库，它会自动检测终端支持并处理兼容性
+    // console 库会自动启用 Windows 10+ 上的 ANSI 支持
+    let cyan = Style::new().cyan().bold();
+    let white = Style::new().white().bold();
+
     println!(
         "{} {}",
-        "ziro".cyan().bold(),
-        format!("v{version}").bright_white().bold()
+        cyan.apply_to("ziro"),
+        white.apply_to(format!("v{version}"))
     );
 }
 

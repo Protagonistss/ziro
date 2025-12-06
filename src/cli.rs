@@ -12,6 +12,22 @@ pub struct Cli {
     #[arg(short = 'v', long = "version")]
     pub version: bool,
 
+    /// 强制使用 ASCII 图标（等效于设置 ZIRO_ASCII_ICONS=1）
+    #[arg(long = "ascii")]
+    pub ascii: bool,
+
+    /// 强制关闭颜色（等效于设置 ZIRO_NO_COLOR=1）
+    #[arg(long = "no-color")]
+    pub no_color: bool,
+
+    /// 使用窄字符符号（尽量避免宽字符乱码，等效于 ZIRO_NARROW=1）
+    #[arg(long = "narrow")]
+    pub narrow: bool,
+
+    /// 纯文本模式（ASCII + 无色，等效于 ZIRO_PLAIN=1）
+    #[arg(long = "plain")]
+    pub plain: bool,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }

@@ -17,6 +17,12 @@ impl Theme {
 
     /// 检测是否启用颜色
     fn detect_color_support() -> bool {
+        if let Ok(value) = env::var("ZIRO_PLAIN") {
+            if Self::is_truthy(&value) {
+                return false;
+            }
+        }
+
         if let Ok(value) = env::var("ZIRO_NO_COLOR") {
             if Self::is_truthy(&value) {
                 return false;

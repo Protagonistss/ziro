@@ -12,6 +12,7 @@ use clap::Parser;
 use cli::{Cli, Commands};
 use colored::Colorize;
 use console::Style;
+use std::env;
 
 fn main() {
     if let Err(e) = run() {
@@ -22,6 +23,7 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
+    apply_global_toggles(&cli);
 
     // 如果请求版本信息，显示并退出
     if cli.version {
@@ -55,6 +57,34 @@ fn run() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn apply_global_toggles(cli: &Cli) {
+    if cli.plain {
+        unsafe {
+            env::set_var("ZIRO_PLAIN", "1");
+            env::set_var("ZIRO_ASCII_ICONS", "1");
+            env::set_var("ZIRO_NO_COLOR", "1");
+        }
+    }
+
+    if cli.ascii {
+        unsafe {
+            env::set_var("ZIRO_ASCII_ICONS", "1");
+        }
+    }
+
+    if cli.no_color {
+        unsafe {
+            env::set_var("ZIRO_NO_COLOR", "1");
+        }
+    }
+
+    if cli.narrow {
+        unsafe {
+            env::set_var("ZIRO_NARROW", "1");
+        }
+    }
 }
 
 fn display_version() {

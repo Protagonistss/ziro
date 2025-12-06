@@ -519,15 +519,16 @@ pub fn display_top(
     println!("{header_rank} {header_name} {header_pid} {header_mem} {header_cpu} {header_cmd}");
 
     let sep_len = RANK_W + NAME_W + PID_W + MEM_W + CPU_W + 5; // spaces between columns
-    println!("{}", theme.muted("—".repeat(sep_len)));
+    println!("{}", theme.muted("-".repeat(sep_len)));
 
     for (index, process) in processes.iter().enumerate() {
         let rank = index + 1;
-        let rank_str = match rank {
-            1 => theme.highlight(rank.to_string()),
-            2 => theme.warn(rank.to_string()),
-            3 => theme.info(rank.to_string()),
-            _ => theme.muted(rank.to_string()),
+        let rank_plain = rank.to_string();
+        let rank_colored = match rank {
+            1 => theme.highlight(&rank_plain),
+            2 => theme.warn(&rank_plain),
+            3 => theme.info(&rank_plain),
+            _ => theme.muted(&rank_plain),
         };
 
         let mem_str = crate::file::format_size(process.memory_bytes);
@@ -537,31 +538,26 @@ pub fn display_top(
             "-".to_string()
         };
 
-        let name = truncate_string(&process.name, NAME_W.saturating_sub(2));
-        let pid_str = theme.muted(process.pid.to_string());
+        let name_plain = truncate_string(&process.name, NAME_W.saturating_sub(2));
+        let pid_plain = process.pid.to_string();
         let cmd_display = if show_cmd && !process.cmd.is_empty() {
             format!(" {}", theme.muted(truncate_string(&process.cmd, 60)))
         } else {
             String::new()
         };
 
-        let name_styled = theme.success(name);
-        let mem_styled = theme.warn(mem_str.clone());
-        let cpu_styled = theme.accent(cpu_str.clone());
+        let name_padded = pad_str(&name_plain, NAME_W, Alignment::Left, None);
+        let pid_padded = pad_str(&pid_plain, PID_W, Alignment::Left, None);
+        let mem_padded = pad_str(&mem_str, MEM_W, Alignment::Right, None);
+        let cpu_padded = pad_str(&cpu_str, CPU_W, Alignment::Right, None);
 
-        let name_cell = pad_str(&name_styled, NAME_W, Alignment::Left, None);
-        let pid_cell = pad_str(&pid_str, PID_W, Alignment::Left, None);
-        let mem_cell = pad_str(&mem_styled, MEM_W, Alignment::Right, None);
-        let cpu_cell = pad_str(&cpu_styled, CPU_W, Alignment::Right, None);
+        let name_cell = theme.success(name_padded);
+        let pid_cell = theme.muted(pid_padded);
+        let mem_cell = theme.warn(mem_padded);
+        let cpu_cell = theme.accent(cpu_padded);
 
-        println!(
-            "{} {} {} {} {}{}",
-            pad_str(&rank_str, RANK_W, Alignment::Left, None),
-            name_cell,
-            pid_cell,
-            mem_cell,
-            cpu_cell,
-            cmd_display
-        );
+        let rank_cell = pad_str(&rank_colored, RANK_W, Alignment::Left, None);
+
+        println!("{rank_cell} {name_cell} {pid_cell} {mem_cell} {cpu_cell}{cmd_display}");
     }
 }

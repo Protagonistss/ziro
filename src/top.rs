@@ -1,4 +1,5 @@
 use crate::ui;
+use crate::ui::TopRenderOptions;
 use anyhow::Result;
 use std::io::{self, Write};
 use std::thread;
@@ -19,6 +20,7 @@ pub struct ProcessView {
     pub pid: u32,
     pub name: String,
     pub memory_bytes: u64,
+    pub memory_percent: f64,
     pub cpu: f32,
     pub cmd: String,
 }
@@ -35,12 +37,18 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
     }
 
     let mut tick: u64 = 0;
+    let mut last_frame: Vec<String> = Vec::new();
+    let incremental = !opts.once;
 
     loop {
         tick = tick.wrapping_add(1);
         let start = Instant::now();
 
         system.refresh_processes_specifics(ProcessesToUpdate::All, process_refresh);
+        system.refresh_memory();
+
+        let total_memory = system.total_memory();
+        let used_memory = system.used_memory();
 
         let mut processes: Vec<ProcessView> = system
             .processes()
@@ -53,11 +61,18 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
                     .collect::<Vec<_>>()
                     .join(" ");
 
+                let memory = process.memory();
+                let memory_percent = if total_memory > 0 {
+                    (memory as f64 / total_memory as f64) * 100.0
+                } else {
+                    0.0
+                };
+
                 ProcessView {
                     pid: pid.as_u32(),
                     name: process.name().to_string_lossy().into_owned(),
-                    // sysinfo 的 memory() 返回字节数
-                    memory_bytes: process.memory(),
+                    memory_bytes: memory,
+                    memory_percent,
                     cpu: process.cpu_usage(),
                     cmd,
                 }
@@ -67,13 +82,17 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
         processes.sort_by(|a, b| b.memory_bytes.cmp(&a.memory_bytes));
         processes.truncate(opts.limit.max(1));
 
-        ui::display_top(
-            &processes,
-            tick,
-            opts.interval,
-            opts.show_cpu,
-            opts.show_cmd,
-        );
+        let render_opts = TopRenderOptions {
+            total_memory,
+            used_memory,
+            refresh: tick,
+            interval: opts.interval,
+            show_cpu: opts.show_cpu,
+            show_cmd: opts.show_cmd,
+            incremental,
+        };
+
+        ui::display_top(&processes, render_opts, &mut last_frame);
 
         if opts.once {
             break;

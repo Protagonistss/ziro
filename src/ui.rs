@@ -477,12 +477,20 @@ pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Resu
 }
 
 /// 实时进程内存展示
+pub struct TopRenderOptions {
+    pub total_memory: u64,
+    pub used_memory: u64,
+    pub refresh: u64,
+    pub interval: f32,
+    pub show_cpu: bool,
+    pub show_cmd: bool,
+    pub incremental: bool,
+}
+
 pub fn display_top(
     processes: &[ProcessView],
-    refresh: u64,
-    interval: f32,
-    show_cpu: bool,
-    show_cmd: bool,
+    opts: TopRenderOptions,
+    last_frame: &mut Vec<String>,
 ) {
     let theme = Theme::new();
 
@@ -491,35 +499,52 @@ pub fn display_top(
     const NAME_W: usize = 26;
     const PID_W: usize = 10;
     const MEM_W: usize = 10;
+    const MEM_PCT_W: usize = 7;
     const CPU_W: usize = 8;
 
-    // 清屏并移动光标到左上角
-    print!("\x1b[2J\x1b[H");
-    let _ = io::stdout().flush();
+    let mut lines: Vec<String> = Vec::new();
 
-    println!("{} {}", theme.icon_lightning(), theme.title("进程内存占用"));
-    println!(
-        "{}",
-        theme.muted(format!(
-            "刷新次数: {} | 间隔: {:.1}s | 显示前 {} | Ctrl+C 退出",
-            refresh,
-            interval,
-            processes.len()
+    // 顶部摘要，补充内存使用率信息
+    lines.push(format!(
+        "{} {}",
+        theme.icon_lightning(),
+        theme.title("进程内存占用")
+    ));
+
+    let mem_used_str = crate::file::format_size(opts.used_memory);
+    let mem_total_str = crate::file::format_size(opts.total_memory);
+    let mem_pct = if opts.total_memory > 0 {
+        (opts.used_memory as f64 / opts.total_memory as f64) * 100.0
+    } else {
+        0.0
+    };
+    lines.push(theme
+        .muted(format!(
+            "刷新次数: {} | 间隔: {:.1}s | 显示前 {} | 内存: {} / {} (占比 {:.1}%) | Ctrl+C 退出",
+            opts.refresh,
+            opts.interval,
+            processes.len(),
+            mem_used_str,
+            mem_total_str,
+            mem_pct
         ))
-    );
-    println!();
+        .to_string());
+    lines.push(String::new());
 
     let header_rank = pad_str("序号", RANK_W, Alignment::Left, None);
     let header_name = pad_str("名称", NAME_W, Alignment::Left, None);
     let header_pid = pad_str("PID", PID_W, Alignment::Left, None);
     let header_mem = pad_str("内存", MEM_W, Alignment::Right, None);
+    let header_mem_pct = pad_str("Mem%", MEM_PCT_W, Alignment::Right, None);
     let header_cpu = pad_str("CPU", CPU_W, Alignment::Right, None);
-    let header_cmd = if show_cmd { "命令" } else { "" };
+    let header_cmd = if opts.show_cmd { "命令" } else { "" };
 
-    println!("{header_rank} {header_name} {header_pid} {header_mem} {header_cpu} {header_cmd}");
+    lines.push(format!(
+        "{header_rank} {header_name} {header_pid} {header_mem} {header_mem_pct} {header_cpu} {header_cmd}"
+    ));
 
-    let sep_len = RANK_W + NAME_W + PID_W + MEM_W + CPU_W + 5; // spaces between columns
-    println!("{}", theme.muted("-".repeat(sep_len)));
+    let sep_len = RANK_W + NAME_W + PID_W + MEM_W + MEM_PCT_W + CPU_W + 6; // spaces between columns
+    lines.push(theme.muted("-".repeat(sep_len)).to_string());
 
     for (index, process) in processes.iter().enumerate() {
         let rank = index + 1;
@@ -532,7 +557,8 @@ pub fn display_top(
         };
 
         let mem_str = crate::file::format_size(process.memory_bytes);
-        let cpu_str = if show_cpu {
+        let mem_pct_str = format!("{:.1}%", process.memory_percent);
+        let cpu_str = if opts.show_cpu {
             format!("{:.1}%", process.cpu)
         } else {
             "-".to_string()
@@ -540,7 +566,7 @@ pub fn display_top(
 
         let name_plain = truncate_string(&process.name, NAME_W.saturating_sub(2));
         let pid_plain = process.pid.to_string();
-        let cmd_display = if show_cmd && !process.cmd.is_empty() {
+        let cmd_display = if opts.show_cmd && !process.cmd.is_empty() {
             format!(" {}", theme.muted(truncate_string(&process.cmd, 60)))
         } else {
             String::new()
@@ -549,15 +575,61 @@ pub fn display_top(
         let name_padded = pad_str(&name_plain, NAME_W, Alignment::Left, None);
         let pid_padded = pad_str(&pid_plain, PID_W, Alignment::Left, None);
         let mem_padded = pad_str(&mem_str, MEM_W, Alignment::Right, None);
+        let mem_pct_padded = pad_str(&mem_pct_str, MEM_PCT_W, Alignment::Right, None);
         let cpu_padded = pad_str(&cpu_str, CPU_W, Alignment::Right, None);
 
         let name_cell = theme.success(name_padded);
         let pid_cell = theme.muted(pid_padded);
         let mem_cell = theme.warn(mem_padded);
+        let mem_pct_cell = theme.warn(mem_pct_padded);
         let cpu_cell = theme.accent(cpu_padded);
 
         let rank_cell = pad_str(&rank_colored, RANK_W, Alignment::Left, None);
 
-        println!("{rank_cell} {name_cell} {pid_cell} {mem_cell} {cpu_cell}{cmd_display}");
+        lines.push(format!(
+            "{rank_cell} {name_cell} {pid_cell} {mem_cell} {mem_pct_cell} {cpu_cell}{cmd_display}"
+        ));
     }
+
+    render_frame(&lines, opts.incremental, last_frame);
+}
+
+/// 将构建好的行以增量方式输出到终端
+fn render_frame(lines: &[String], incremental: bool, last_frame: &mut Vec<String>) {
+    if !incremental {
+        for line in lines {
+            println!("{line}");
+        }
+        return;
+    }
+
+    // 回到屏幕左上角，增量刷新避免闪烁
+    print!("\x1b[H");
+    let mut stdout = io::stdout();
+
+    let max_len = lines.len().max(last_frame.len());
+    for i in 0..max_len {
+        match (lines.get(i), last_frame.get(i)) {
+            (Some(new_line), Some(old_line)) if new_line == old_line => {
+                // 内容一致，跳过输出直接移到下一行
+                let _ = write!(stdout, "\x1b[E");
+            }
+            (Some(new_line), _) => {
+                // 新行或内容变化，清理后输出
+                let _ = writeln!(stdout, "\x1b[2K{new_line}");
+            }
+            (None, Some(_)) => {
+                // 旧行需要清理
+                let _ = writeln!(stdout, "\x1b[2K");
+            }
+            (None, None) => break,
+        }
+    }
+
+    // 清理光标后方，避免残影
+    let _ = write!(stdout, "\x1b[J");
+    let _ = stdout.flush();
+
+    last_frame.clear();
+    last_frame.extend(lines.iter().cloned());
 }

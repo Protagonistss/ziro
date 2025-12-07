@@ -504,11 +504,13 @@ pub fn display_top(
 
     let mut lines: Vec<String> = Vec::new();
 
-    // 顶部摘要，补充内存使用率信息
+    // 顶部摘要，添加实时状态指示
+    let status_icon = if opts.refresh % 2 == 0 { "●" } else { "◐" };
     lines.push(format!(
-        "{} {}",
+        "{} {} {}",
         theme.icon_lightning(),
-        theme.title("进程内存占用")
+        theme.title("进程内存占用"),
+        theme.muted(format!("[{status_icon}]"))
     ));
 
     let mem_used_str = crate::file::format_size(opts.used_memory);
@@ -518,17 +520,25 @@ pub fn display_top(
     } else {
         0.0
     };
-    lines.push(theme
-        .muted(format!(
-            "刷新次数: {} | 间隔: {:.1}s | 显示前 {} | 内存: {} / {} (占比 {:.1}%) | Ctrl+C 退出",
-            opts.refresh,
-            opts.interval,
-            processes.len(),
-            mem_used_str,
-            mem_total_str,
-            mem_pct
-        ))
-        .to_string());
+
+    // 创建实时状态行
+    let status_line = format!(
+        "刷新: {} | 间隔: {:.1}s | 进程: {} | 内存: {} / {} ({:.1}%) | {}",
+        opts.refresh,
+        opts.interval,
+        processes.len(),
+        mem_used_str,
+        mem_total_str,
+        mem_pct,
+        theme.muted("Ctrl+C 退出")
+    );
+    lines.push(status_line);
+
+    // 添加进度条显示内存使用率
+    let bar_width = 30;
+    let filled = (mem_pct / 100.0 * bar_width as f64).round() as usize;
+    let bar = "=".repeat(filled) + &"·".repeat(bar_width - filled);
+    lines.push(theme.muted(format!("[{bar}]")).to_string());
     lines.push(String::new());
 
     let header_rank = pad_str("序号", RANK_W, Alignment::Left, None);
@@ -603,33 +613,54 @@ fn render_frame(lines: &[String], incremental: bool, last_frame: &mut Vec<String
         return;
     }
 
-    // 回到屏幕左上角，增量刷新避免闪烁
-    print!("\x1b[H");
     let mut stdout = io::stdout();
 
+    // 隐藏光标，避免闪烁
+    let _ = write!(stdout, "\x1b[?25l");
+
+    // 回到屏幕左上角，使用更高效的控制序列
+    let _ = write!(stdout, "\x1b[H");
+
     let max_len = lines.len().max(last_frame.len());
+    let mut changed_lines = 0;
+
     for i in 0..max_len {
         match (lines.get(i), last_frame.get(i)) {
             (Some(new_line), Some(old_line)) if new_line == old_line => {
-                // 内容一致，跳过输出直接移到下一行
+                // 内容一致，快速移到下一行
                 let _ = write!(stdout, "\x1b[E");
             }
             (Some(new_line), _) => {
-                // 新行或内容变化，清理后输出
-                let _ = writeln!(stdout, "\x1b[2K{new_line}");
+                // 新行或内容变化，清理并输出
+                let _ = write!(stdout, "\x1b[2K{new_line}\r\n");
+                changed_lines += 1;
             }
             (None, Some(_)) => {
                 // 旧行需要清理
-                let _ = writeln!(stdout, "\x1b[2K");
+                let _ = write!(stdout, "\x1b[2K\r\n");
+                changed_lines += 1;
             }
             (None, None) => break,
         }
     }
 
-    // 清理光标后方，避免残影
-    let _ = write!(stdout, "\x1b[J");
+    // 只清理多余的行，减少不必要的操作
+    if max_len > lines.len() {
+        let _ = write!(stdout, "\x1b[{}J", max_len - lines.len() + 1);
+    } else {
+        // 清理光标到屏幕末尾
+        let _ = write!(stdout, "\x1b[J");
+    }
+
+    // 显示光标
+    let _ = write!(stdout, "\x1b[?25h");
+
+    // 立即刷新输出缓冲区
     let _ = stdout.flush();
 
-    last_frame.clear();
-    last_frame.extend(lines.iter().cloned());
+    // 高效更新 last_frame
+    if changed_lines > 0 || lines.len() != last_frame.len() {
+        last_frame.clear();
+        last_frame.extend(lines.iter().cloned());
+    }
 }

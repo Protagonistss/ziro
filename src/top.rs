@@ -44,10 +44,20 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
     let mut tick: u64 = 0;
     let mut last_frame: Vec<String> = Vec::new();
 
+    // 初始刷新以建立基准 CPU 使用率
+    system.refresh_processes_specifics(ProcessesToUpdate::All, process_refresh);
+    system.refresh_memory();
+
+    // 为更好的 CPU 使用率计算，等待一小段时间
+    if !opts.once {
+        thread::sleep(Duration::from_millis(100));
+    }
+
     loop {
         tick = tick.wrapping_add(1);
         let start = Instant::now();
 
+        // 使用更智能的刷新策略
         system.refresh_processes_specifics(ProcessesToUpdate::All, process_refresh);
         system.refresh_memory();
 
@@ -72,18 +82,33 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
                     0.0
                 };
 
+                // CPU 使用率计算 - 使用更稳定的值
+                let cpu_usage = process.cpu_usage();
+
                 ProcessView {
                     pid: pid.as_u32(),
                     name: process.name().to_string_lossy().into_owned(),
                     memory_bytes: memory,
                     memory_percent,
-                    cpu: process.cpu_usage(),
+                    cpu: cpu_usage,
                     cmd,
                 }
             })
             .collect();
 
-        processes.sort_by(|a, b| b.memory_bytes.cmp(&a.memory_bytes));
+        // 按内存使用率排序，但考虑 CPU 使用率的权重
+        if opts.show_cpu {
+            processes.sort_by(|a, b| {
+                let score_a = a.memory_bytes as f64 * 0.7 + a.cpu as f64 * 1000.0 * 0.3;
+                let score_b = b.memory_bytes as f64 * 0.7 + b.cpu as f64 * 1000.0 * 0.3;
+                score_b
+                    .partial_cmp(&score_a)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        } else {
+            processes.sort_by(|a, b| b.memory_bytes.cmp(&a.memory_bytes));
+        }
+
         processes.truncate(opts.limit.max(1));
 
         let render_opts = TopRenderOptions {
@@ -102,10 +127,14 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
             break;
         }
 
-        // 补偿刷新时间，保持接近 interval
+        // 更精确的刷新时间控制
         let elapsed = start.elapsed();
-        let sleep_ms = ((opts.interval * 1000.0) as i64 - elapsed.as_millis() as i64).max(0) as u64;
-        thread::sleep(Duration::from_millis(sleep_ms));
+        let target_duration = Duration::from_secs_f32(opts.interval);
+
+        if elapsed < target_duration {
+            let remaining = target_duration - elapsed;
+            thread::sleep(remaining);
+        }
     }
 
     // 离开备用屏幕，恢复原屏幕内容

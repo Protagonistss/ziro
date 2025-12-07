@@ -124,10 +124,59 @@ fn detect_windows_utf8() -> bool {
         return true;
     }
 
+    // 方法1: 检查活动代码页
     if let Ok(output) = Command::new("cmd").args(["/C", "chcp"]).output() {
         if let Ok(text) = String::from_utf8(output.stdout) {
-            return text.contains("65001");
+            // 查找 "活动代码页: 65001" 或类似模式
+            if text.contains("65001") {
+                return true;
+            }
         }
     }
+
+    // 方法2: 检查系统默认输出代码页
+    if let Ok(output) = Command::new("cmd").args(["/C", "echo %LANG%"]).output() {
+        if let Ok(lang) = String::from_utf8(output.stdout) {
+            let lang = lang.trim().to_lowercase();
+            if lang.contains("utf-8") || lang.contains("65001") {
+                return true;
+            }
+        }
+    }
+
+    // 方法3: 检查系统环境变量
+    if let Ok(locale) = env::var("LC_ALL").or_else(|_| env::var("LANG")) {
+        let locale = locale.to_lowercase();
+        if locale.contains("utf-8") || locale.contains("65001") {
+            return true;
+        }
+    }
+
+    // 方法4: 检查 Windows Terminal 或其他现代终端
+    if env::var("WT_SESSION")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false)
+    {
+        return true;
+    }
+
+    // 方法5: 检查终端程序
+    if let Ok(term_program) = env::var("TERM_PROGRAM") {
+        if ["vscode", "hyper", "terminus", "windowsterminal"]
+            .contains(&term_program.to_lowercase().as_str())
+        {
+            return true;
+        }
+    }
+
+    // 方法6: 检查 TERM 变量
+    if let Ok(term) = env::var("TERM") {
+        let term = term.to_lowercase();
+        if term.contains("xterm") || term.contains("screen") || term.contains("tmux") {
+            return true;
+        }
+    }
+
+    // 默认保守策略
     false
 }

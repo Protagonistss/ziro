@@ -144,22 +144,48 @@ impl Icons {
     fn detect_unicode_support() -> bool {
         // 检查终端类型
         if let Ok(term) = env::var("TERM") {
+            let term = term.to_lowercase();
             if term.contains("xterm")
                 || term.contains("screen")
                 || term.contains("tmux")
                 || term.contains("alacritty")
                 || term.contains("kitty")
+                || term.contains("iterm")
+                || term.contains("gnome")
+                || term.contains("konsole")
             {
                 return true;
+            }
+
+            // 对于 Windows 特有的终端类型，采用保守策略
+            if cfg!(target_os = "windows") {
+                if term.contains("cygwin") || term.contains("msys") || term.contains("mingw") {
+                    // 这些终端通常支持 Unicode，但需要检查其他条件
+                } else if term.contains("win32") || term.contains("conhost") {
+                    // 保守策略：传统 Windows 控制台可能不支持 Unicode emoji
+                    return false;
+                }
             }
         }
 
         // Windows 终端检测
         if cfg!(target_os = "windows") {
+            // Windows Terminal 检测
             if let Ok(wt_session) = env::var("WT_SESSION") {
                 return !wt_session.is_empty();
             }
 
+            // 检查终端程序
+            if let Ok(term_program) = env::var("TERM_PROGRAM") {
+                let term_program = term_program.to_lowercase();
+                if ["vscode", "hyper", "terminus", "windowsterminal", "wt"]
+                    .contains(&term_program.as_str())
+                {
+                    return true;
+                }
+            }
+
+            // 检查 Windows Terminal 安装路径
             if let Ok(program_files) = env::var("ProgramFiles") {
                 let wt_path = std::path::Path::new(&program_files)
                     .join("WindowsApps")
@@ -168,16 +194,32 @@ impl Icons {
                     return true;
                 }
             }
+
+            // 检查本地应用数据中的 Windows Terminal
+            if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+                let wt_path = std::path::Path::new(&local_app_data)
+                    .join("Microsoft")
+                    .join("WindowsApps");
+                if wt_path.exists() && wt_path.join("Microsoft.WindowsTerminal").exists() {
+                    return true;
+                }
+            }
+
+            // 检查 ConEmu、ANSICON 等增强终端
+            if env::var("ConEmuANSI").is_ok() || env::var("ANSICON").is_ok() {
+                return true;
+            }
+        }
+
+        // 非 Windows 系统默认支持 Unicode
+        #[cfg(not(target_os = "windows"))]
+        {
+            true
         }
 
         #[cfg(target_os = "windows")]
         {
             false
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            true
         }
     }
 
@@ -228,12 +270,22 @@ fn is_truthy_env(key: &str) -> bool {
 
 fn is_likely_non_utf8() -> bool {
     if cfg!(target_os = "windows") {
-        // Windows Terminal 或 VSCode 终端通常支持 Unicode
+        // Windows Terminal 或现代终端通常支持 Unicode
         if env::var("WT_SESSION")
             .map(|v| !v.is_empty())
             .unwrap_or(false)
         {
             return false;
+        }
+
+        // 检查终端程序
+        if let Ok(term_program) = env::var("TERM_PROGRAM") {
+            let term_program = term_program.to_lowercase();
+            if ["vscode", "hyper", "terminus", "windowsterminal", "wt"]
+                .contains(&term_program.as_str())
+            {
+                return false;
+            }
         }
 
         // LANG/LC_ALL 包含 utf-8 时认为可用
@@ -245,7 +297,25 @@ fn is_likely_non_utf8() -> bool {
             return false;
         }
 
-        // 保守回退
+        // 检查 TERM 变量
+        if let Ok(term) = env::var("TERM") {
+            let term = term.to_lowercase();
+            // 现代终端类型
+            if term.contains("xterm") || term.contains("screen") || term.contains("tmux") {
+                return false;
+            }
+            // 传统 Windows 控制台
+            if term.contains("win32") || term.contains("conhost") {
+                return true;
+            }
+        }
+
+        // 检查增强终端支持
+        if env::var("ConEmuANSI").is_ok() || env::var("ANSICON").is_ok() {
+            return false;
+        }
+
+        // 保守回退：Windows 系统默认可能不支持 Unicode
         return true;
     }
 
@@ -254,6 +324,12 @@ fn is_likely_non_utf8() -> bool {
         .or_else(|_| env::var("LANG"))
         .unwrap_or_default()
         .to_lowercase();
+
+    // 如果没有明确的 locale 信息，保守地认为支持 UTF-8
+    if locale.is_empty() {
+        return false;
+    }
+
     !locale.contains("utf-8")
 }
 

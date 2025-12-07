@@ -104,6 +104,7 @@ fn get_network_connections() -> Result<HashMap<u16, u32>> {
 }
 
 /// 解析 netstat 输出，提取端口和PID映射
+#[cfg(target_os = "windows")]
 fn parse_netstat_output(stdout: &[u8]) -> Result<HashMap<u16, u32>> {
     let mut connections = HashMap::new();
 

@@ -40,10 +40,10 @@ fn should_use_alt_screen(profile: &TerminalProfile) -> bool {
 
     // 非 Windows 系统通常支持备用屏幕
     #[cfg(not(target_os = "windows"))]
-    {
-        return true;
-    }
+    return true;
 
+    // Windows 系统的默认情况
+    #[cfg(target_os = "windows")]
     false
 }
 

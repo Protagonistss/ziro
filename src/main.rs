@@ -3,6 +3,7 @@ mod file;
 mod icons;
 mod port;
 mod process;
+mod term;
 mod theme;
 mod top;
 mod ui;
@@ -23,7 +24,9 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    apply_global_toggles(&cli);
+    let profile = term::detect_profile(&cli);
+    term::apply_profile_env(&profile);
+    term::set_global_profile(profile);
 
     // 如果请求版本信息，显示并退出
     if cli.version {
@@ -59,33 +62,7 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-fn apply_global_toggles(cli: &Cli) {
-    if cli.plain {
-        unsafe {
-            env::set_var("ZIRO_PLAIN", "1");
-            env::set_var("ZIRO_ASCII_ICONS", "1");
-            env::set_var("ZIRO_NO_COLOR", "1");
-        }
-    }
-
-    if cli.ascii {
-        unsafe {
-            env::set_var("ZIRO_ASCII_ICONS", "1");
-        }
-    }
-
-    if cli.no_color {
-        unsafe {
-            env::set_var("ZIRO_NO_COLOR", "1");
-        }
-    }
-
-    if cli.narrow {
-        unsafe {
-            env::set_var("ZIRO_NARROW", "1");
-        }
-    }
-}
+// CLI 兼容性：保留参数定义，但能力检测已集中到 term::detect_profile/ apply_profile_env。
 
 fn display_version() {
     let version = env!("CARGO_PKG_VERSION");

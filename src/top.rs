@@ -1,3 +1,4 @@
+use crate::term;
 use crate::ui;
 use crate::ui::TopRenderOptions;
 use anyhow::Result;
@@ -29,8 +30,12 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
     let process_refresh = ProcessRefreshKind::everything();
     let mut system = System::new_with_specifics(RefreshKind::new().with_processes(process_refresh));
 
+    // 根据终端能力决定是否使用备用屏幕 / 增量刷新，避免在不支持的控制台显示乱码
+    let profile = term::global_profile();
+    let use_alt_screen = !opts.once && profile.alt_screen;
+    let incremental = !opts.once && profile.incremental;
+
     // 进入备用屏幕，避免污染滚动历史（once 模式不需要）
-    let use_alt_screen = !opts.once;
     if use_alt_screen {
         print!("\x1b[?1049h");
         let _ = io::stdout().flush();
@@ -38,7 +43,6 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
 
     let mut tick: u64 = 0;
     let mut last_frame: Vec<String> = Vec::new();
-    let incremental = !opts.once;
 
     loop {
         tick = tick.wrapping_add(1);

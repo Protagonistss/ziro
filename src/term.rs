@@ -63,7 +63,7 @@ pub fn detect_profile(cli: &Cli) -> TerminalProfile {
         || env::var("ConEmuANSI").is_ok()
         || env::var("ANSICON").is_ok()
         || env::var("TERM_PROGRAM").is_ok()
-        || is_powerhell_modern();
+        || is_modern_terminal();
     let utf8_ok = if is_windows {
         detect_windows_utf8()
             || env::var("LC_ALL")
@@ -77,12 +77,18 @@ pub fn detect_profile(cli: &Cli) -> TerminalProfile {
             .unwrap_or(true)
     };
 
-    // 安全降级条件：显式 plain，或非 UTF-8，或 Windows 且看起来非现代终端
-    // 自动降级条件：
-    // - 用户显式 plain
-    // - 非 Windows 且非 UTF-8（大概率乱码）
-    // - Windows 且「既不现代又非 UTF-8」（双重不安全）
-    let should_degrade = profile.plain || (!is_windows && !utf8_ok) || (!utf8_ok && !looks_modern);
+    // 改进的智能降级策略
+    // 自动降级条件分析：
+    // 1. 用户显式要求 plain 模式
+    // 2. 非 Windows 系统且非 UTF-8 环境（大概率会乱码）
+    // 3. Windows 系统下的不安全组合：
+    //    - 既非 UTF-8 又非现代终端
+    //    - Windows PowerShell 5.1 但不在现代终端中
+    //    - 检测到传统控制台环境（conhost）
+    let should_degrade = profile.plain
+        || (!is_windows && !utf8_ok)
+        || (is_windows && should_degrade_on_windows(utf8_ok, looks_modern));
+
     if should_degrade {
         profile.plain = true;
         profile.ascii_icons = true;
@@ -116,38 +122,103 @@ fn is_truthy_env(key: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// 检测是否为现代 PowerShell 环境
-fn is_powerhell_modern() -> bool {
-    // 检查是否在 PowerShell 中运行
-    if env::var("PSModulePath").is_ok() {
-        // PowerShell Core 或 Windows PowerShell
+/// 检测是否为现代终端（改进版本）
+fn is_modern_terminal() -> bool {
+    // 1. PowerShell 环境的精确检测
+    if is_powershell_core() {
+        // PowerShell Core 通常是现代的
         return true;
     }
 
-    // 检查其他 PowerShell 环境变量
-    if env::var("PSExecutionPolicyPreference").is_ok()
-        || env::var("PSHOME").is_ok()
-        || env::var("PROFILE").is_ok()
-    {
+    if is_windows_powershell_legacy() {
+        // Windows PowerShell 5.1 在传统控制台中可能不支持 ANSI
+        return is_windows_terminal_or_conemu();
+    }
+
+    // 2. 检查 Windows Terminal 或其他现代终端
+    if is_windows_terminal_or_conemu() {
         return true;
     }
 
-    // 检查进程名
-    #[cfg(target_os = "windows")]
+    // 3. 检查其他现代终端环境
+    if env::var("TERM_PROGRAM")
+        .map(|t| {
+            let t = t.to_lowercase();
+            matches!(
+                t.as_str(),
+                "vscode" | "hyper" | "terminus" | "windowsterminal" | "warp" | "wt"
+            )
+        })
+        .unwrap_or(false)
     {
-        if let Ok(parent_pid) = std::process::Command::new("powershell")
-            .args(["-Command", "$PID"])
-            .output()
-        {
-            if let Ok(pid_str) = String::from_utf8(parent_pid.stdout) {
-                if !pid_str.trim().is_empty() {
-                    return true;
-                }
-            }
-        }
+        return true;
     }
 
     false
+}
+
+/// 检测是否为 PowerShell Core (6+)
+fn is_powershell_core() -> bool {
+    // PowerShell Core 会在 PSVersionTable 中设置版本
+    env::var("PSVersionTable").map(|_| true).unwrap_or(false)
+}
+
+/// 检测是否为 Windows PowerShell (5.1 及以下)
+fn is_windows_powershell_legacy() -> bool {
+    // Windows PowerShell 5.1 特有环境变量检测
+    env::var("PSModulePath").is_ok()
+        && env::var("PSVersionTable").is_err()
+        && (env::var("PSHOME").is_ok() || env::var("PSExecutionPolicyPreference").is_ok())
+}
+
+/// 检测是否在 Windows Terminal 或 ConEmu 中运行
+fn is_windows_terminal_or_conemu() -> bool {
+    env::var("WT_SESSION").is_ok()  // Windows Terminal
+        || env::var("ConEmuANSI").is_ok()  // ConEmu with ANSI
+        || env::var("ANSICON").is_ok()     // ANSICON
+        || env::var("TERM_PROGRAM").is_ok() // VSCode 等现代终端
+}
+
+/// Windows 环境下的降级决策函数
+fn should_degrade_on_windows(utf8_ok: bool, looks_modern: bool) -> bool {
+    // 情况1：既非 UTF-8 又非现代终端 -> 明确降级
+    if !utf8_ok && !looks_modern {
+        return true;
+    }
+
+    // 情况2：Windows PowerShell 5.1 且不在现代终端中
+    if is_windows_powershell_legacy() && !is_windows_terminal_or_conemu() {
+        return true;
+    }
+
+    // 情况3：检测到传统控制台环境（conhost）
+    if is_traditional_console() {
+        return true;
+    }
+
+    // 情况4：非 UTF-8 环境，即使看起来现代也要保守处理
+    if !utf8_ok && !is_very_modern_terminal() {
+        return true;
+    }
+
+    false
+}
+
+/// 检测是否为传统控制台（conhost）
+fn is_traditional_console() -> bool {
+    // 传统控制台通常没有这些现代环境变量
+    env::var("WT_SESSION").is_err()
+        && env::var("TERM_PROGRAM").is_err()
+        && env::var("ConEmuANSI").is_err()
+        && env::var("ANSICON").is_err()
+        && (env::var("TERM").is_err() || env::var("TERM").unwrap_or_default().is_empty())
+}
+
+/// 检测是否为非常现代的终端（值得冒险尝试 ANSI）
+fn is_very_modern_terminal() -> bool {
+    env::var("WT_SESSION").is_ok()  // Windows Terminal
+        || (env::var("TERM_PROGRAM").is_ok()
+            && env::var("TERM_PROGRAM").unwrap_or_default().to_lowercase().contains("vscode"))
 }
 
 fn bool_to_flag(v: bool) -> &'static str {

@@ -15,7 +15,22 @@ use colored::Colorize;
 use console::Style;
 use std::env;
 
+// Windows 控制台 UTF-8 初始化
+#[cfg(target_os = "windows")]
+fn init_windows_console() {
+    use winapi::um::wincon::{SetConsoleCP, SetConsoleOutputCP};
+    unsafe {
+        // 设置控制台输入和输出编码为 UTF-8
+        SetConsoleOutputCP(65001);
+        SetConsoleCP(65001);
+    }
+}
+
 fn main() {
+    // 在 Windows 上初始化控制台 UTF-8 编码
+    #[cfg(target_os = "windows")]
+    init_windows_console();
+
     if let Err(e) = run() {
         ui::display_error(&e);
         std::process::exit(1);

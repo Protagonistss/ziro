@@ -774,4 +774,5 @@ dependencies = [
  "console",
  "inquire",
  "sysinfo",
+ "winapi",
 ]

@@ -2,7 +2,7 @@ use crate::cli::Cli;
 use std::process::Command;
 use std::{env, sync::OnceLock};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TerminalProfile {
     pub plain: bool,
     pub ascii_icons: bool,
@@ -140,17 +140,45 @@ fn is_modern_terminal() -> bool {
         return true;
     }
 
-    // 3. 检查其他现代终端环境
-    if env::var("TERM_PROGRAM")
-        .map(|t| {
-            let t = t.to_lowercase();
-            matches!(
-                t.as_str(),
-                "vscode" | "hyper" | "terminus" | "windowsterminal" | "warp" | "wt"
-            )
-        })
-        .unwrap_or(false)
-    {
+    // 3. 更广泛的现代终端检测
+    if let Ok(term_program) = env::var("TERM_PROGRAM") {
+        let term_program = term_program.to_lowercase();
+        // 支持更多现代终端
+        if [
+            "vscode",
+            "hyper",
+            "terminus",
+            "windowsterminal",
+            "warp",
+            "wt",
+            "warpterminal",
+            "iterm",
+            "alacritty",
+            "kitty",
+            "wezterm",
+        ]
+        .contains(&term_program.as_str())
+        {
+            return true;
+        }
+    }
+
+    // 4. TERM 变量检测（Unix-like 终端模拟器）
+    if let Ok(term) = env::var("TERM") {
+        let term = term.to_lowercase();
+        if term.contains("xterm")
+            || term.contains("screen")
+            || term.contains("tmux")
+            || term.contains("256color")
+            || term.contains("alacritty")
+            || term.contains("kitty")
+        {
+            return true;
+        }
+    }
+
+    // 5. 其他现代终端指标
+    if env::var("COLORTERM").is_ok() || env::var("TERM_PROGRAM_VERSION").is_ok() {
         return true;
     }
 
@@ -173,10 +201,41 @@ fn is_windows_powershell_legacy() -> bool {
 
 /// 检测是否在 Windows Terminal 或 ConEmu 中运行
 fn is_windows_terminal_or_conemu() -> bool {
-    env::var("WT_SESSION").is_ok()  // Windows Terminal
-        || env::var("ConEmuANSI").is_ok()  // ConEmu with ANSI
-        || env::var("ANSICON").is_ok()     // ANSICON
-        || env::var("TERM_PROGRAM").is_ok() // VSCode 等现代终端
+    // Windows Terminal - 最可靠的检测
+    if env::var("WT_SESSION").is_ok() {
+        return true;
+    }
+
+    // ConEmu with ANSI support
+    if env::var("ConEmuANSI").is_ok() {
+        return true;
+    }
+
+    // ANSICON - ANSI 支持层
+    if env::var("ANSICON").is_ok() {
+        return true;
+    }
+
+    // TERM_PROGRAM - 需要更严格的验证
+    if let Ok(term_program) = env::var("TERM_PROGRAM") {
+        let term_program = term_program.to_lowercase();
+        // 只确认是已知的现代终端程序
+        if [
+            "vscode",
+            "hyper",
+            "terminus",
+            "windowsterminal",
+            "warp",
+            "wt",
+            "warpterminal",
+        ]
+        .contains(&term_program.as_str())
+        {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Windows 环境下的降级决策函数
@@ -201,6 +260,12 @@ fn should_degrade_on_windows(utf8_ok: bool, looks_modern: bool) -> bool {
         return true;
     }
 
+    // 情况5：边缘情况 - 无法明确识别环境，采用保守策略
+    // 如果不是明确支持的现代终端，也不是明确的传统终端，则降级
+    if !is_very_modern_terminal() && !is_windows_terminal_or_conemu() && !is_powershell_core() {
+        return true;
+    }
+
     false
 }
 
@@ -216,9 +281,37 @@ fn is_traditional_console() -> bool {
 
 /// 检测是否为非常现代的终端（值得冒险尝试 ANSI）
 fn is_very_modern_terminal() -> bool {
-    env::var("WT_SESSION").is_ok()  // Windows Terminal
-        || (env::var("TERM_PROGRAM").is_ok()
-            && env::var("TERM_PROGRAM").unwrap_or_default().to_lowercase().contains("vscode"))
+    // Windows Terminal - 最可靠的检测
+    if env::var("WT_SESSION").is_ok() {
+        return true;
+    }
+
+    // VSCode 终端
+    if let Ok(term_program) = env::var("TERM_PROGRAM") {
+        if term_program.to_lowercase().contains("vscode") {
+            return true;
+        }
+    }
+
+    // Windows Terminal 的新版本检测方式
+    if env::var("WT_PROFILE_ID").is_ok() {
+        return true;
+    }
+
+    // Hyper 终端
+    if let Ok(term) = env::var("TERM") {
+        let term = term.to_lowercase();
+        if term.contains("hyper") || term.contains("xterm-256color") {
+            return true;
+        }
+    }
+
+    // 检测其他现代终端的环境变量
+    if env::var("TERM_PROGRAM_VERSION").is_ok() {
+        return true;
+    }
+
+    false
 }
 
 fn bool_to_flag(v: bool) -> &'static str {

@@ -9,63 +9,130 @@ use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 
 use crate::term::TerminalProfile;
 
-/// 检查是否应该使用备用屏幕
+/// 检查是否应该使用备用屏幕（改进版本）
 fn should_use_alt_screen(profile: &TerminalProfile) -> bool {
     if !profile.alt_screen {
         return false;
     }
 
-    // 在某些终端中，备用屏幕可能不稳定，需要额外检查
+    // 使用改进的终端检测逻辑
     #[cfg(target_os = "windows")]
     {
-        // 在 PowerShell 中，备用屏幕支持可能不稳定
-        if std::env::var("PSModulePath").is_ok() {
-            // PowerShell 检测 - 保守策略
-            return is_power_shell_conhost();
-        }
-
-        // Windows Terminal 支持
+        // Windows Terminal 明确支持备用屏幕
         if std::env::var("WT_SESSION").is_ok() {
             return true;
         }
 
-        // 其他现代终端
-        if std::env::var("TERM_PROGRAM").is_ok()
-            || std::env::var("ConEmuANSI").is_ok()
-            || std::env::var("ANSICON").is_ok()
+        // VSCode 终端支持备用屏幕
+        if let Ok(term_program) = std::env::var("TERM_PROGRAM") {
+            if term_program.to_lowercase().contains("vscode") {
+                return true;
+            }
+        }
+
+        // ConEmu 和其他有 ANSI 支持的现代终端
+        if std::env::var("ConEmuANSI").is_ok() || std::env::var("ANSICON").is_ok() {
+            return true;
+        }
+
+        // PowerShell Core 通常支持备用屏幕
+        if is_powershell_core() {
+            return true;
+        }
+
+        // 直接检测 Warp 终端和其他现代终端
+        if let Ok(term_program) = std::env::var("TERM_PROGRAM") {
+            let term_program = term_program.to_lowercase();
+            if term_program.contains("warp") || term_program.contains("warpterminal") {
+                return true;
+            }
+        }
+
+        // TERM 变量检测 - 支持 xterm-256color 等现代终端
+        if let Ok(term) = std::env::var("TERM") {
+            let term = term.to_lowercase();
+            if term.contains("xterm-256color")
+                || term.contains("xterm")
+                || term.contains("256color")
+            {
+                return true;
+            }
+        }
+
+        // Windows PowerShell 5.1 只在特定环境下支持备用屏幕
+        if is_windows_powershell_legacy() {
+            // 只有在 Windows Terminal 或 ConEmu 中才使用备用屏幕
+            return is_windows_terminal_or_conemu();
+        }
+
+        // 其他情况默认不使用备用屏幕，避免问题
+        false
+    }
+
+    // 非 Windows 系统通常支持备用屏幕
+    #[cfg(not(target_os = "windows"))]
+    true
+}
+
+/// 检测是否为 PowerShell Core (6+)
+#[cfg(target_os = "windows")]
+fn is_powershell_core() -> bool {
+    std::env::var("PSVersionTable").is_ok()
+}
+
+/// 检测是否为 Windows PowerShell (5.1 及以下)
+#[cfg(target_os = "windows")]
+fn is_windows_powershell_legacy() -> bool {
+    std::env::var("PSModulePath").is_ok()
+        && std::env::var("PSVersionTable").is_err()
+        && (std::env::var("PSHOME").is_ok() || std::env::var("PSExecutionPolicyPreference").is_ok())
+}
+
+/// 检测是否在支持备用屏幕的现代终端中运行
+#[cfg(target_os = "windows")]
+fn is_windows_terminal_or_conemu() -> bool {
+    // Windows Terminal
+    if std::env::var("WT_SESSION").is_ok() {
+        return true;
+    }
+
+    // ConEmu with ANSI
+    if std::env::var("ConEmuANSI").is_ok() {
+        return true;
+    }
+
+    // ANSICON
+    if std::env::var("ANSICON").is_ok() {
+        return true;
+    }
+
+    // 各种现代终端的 TERM_PROGRAM 检测
+    if let Ok(term_program) = std::env::var("TERM_PROGRAM") {
+        let term_program = term_program.to_lowercase();
+        if term_program.contains("vscode")
+            || term_program.contains("warp")
+            || term_program.contains("hyper")
+            || term_program.contains("terminus")
         {
             return true;
         }
     }
 
-    // 非 Windows 系统通常支持备用屏幕
-    #[cfg(not(target_os = "windows"))]
-    return true;
-
-    // Windows 系统的默认情况
-    #[cfg(target_os = "windows")]
-    false
-}
-
-/// 检测是否为 PowerShell 在 ConHost 中运行
-#[cfg(target_os = "windows")]
-fn is_power_shell_conhost() -> bool {
-    // 检查 TERM 环境变量，如果不存在或者为空，可能是在 conhost 中
+    // TERM 变量检测 - 支持很多 Unix-like 终端模拟器
     if let Ok(term) = std::env::var("TERM") {
-        if term.is_empty() || term.to_lowercase().contains("conhost") {
-            return false; // conhost 不支持备用屏幕
+        let term = term.to_lowercase();
+        if term.contains("xterm")
+            || term.contains("screen")
+            || term.contains("tmux")
+            || term.contains("256color")
+            || term.contains("alacritty")
+            || term.contains("kitty")
+        {
+            return true;
         }
-    } else {
-        return false; // 没有 TERM 变量，可能是传统控制台
     }
 
-    // 如果有 WT_SESSION，说明在 Windows Terminal 中
-    if std::env::var("WT_SESSION").is_ok() {
-        return true;
-    }
-
-    // 其他情况下假设支持
-    true
+    false
 }
 
 /// 安全地进入备用屏幕

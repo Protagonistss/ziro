@@ -2,80 +2,6 @@ use anyhow::Result;
 use std::collections::HashMap;
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 
-/// 安全地转换命令输出为字符串，尝试多种编码方式
-fn safe_command_output_to_string(stdout: &[u8]) -> String {
-    // 首先尝试 UTF-8
-    if let Ok(text) = std::str::from_utf8(stdout) {
-        return text.to_string();
-    }
-
-    // 如果 UTF-8 失败，尝试检测 Windows 代码页
-    #[cfg(target_os = "windows")]
-    {
-        // 尝试常见的中文编码
-        if let Some(text) = try_decode_as_gbk(stdout) {
-            return text;
-        }
-
-        // 尝试 Windows-1252
-        if let Some(text) = try_decode_as_windows_1252(stdout) {
-            return text;
-        }
-    }
-
-    // 最后的回退：使用 lossy 转换，但记录错误
-    let lossy = String::from_utf8_lossy(stdout);
-    if lossy.contains('�') {
-        // 如果有替换字符，说明有编码问题，但这在系统命令输出中很常见
-        // 记录到 stderr 而不是 stdout，避免干扰程序输出
-        eprintln!("警告: 命令输出包含非 UTF-8 字符，可能影响显示效果");
-    }
-    lossy.to_string()
-}
-
-#[cfg(target_os = "windows")]
-fn try_decode_as_gbk(data: &[u8]) -> Option<String> {
-    // 简化的 GBK 检测和转换
-    // 这是一个基本实现，实际项目中可能需要使用 encoding crate
-    if data.len() >= 2 {
-        // 检查是否可能是 GBK 编码
-        let mut valid_gbk = true;
-        let mut i = 0;
-        while i < data.len() - 1 {
-            if data[i] >= 0x81 && data[i] <= 0xFE && data[i + 1] >= 0x40 && data[i + 1] <= 0xFE {
-                // 可能是 GBK 字符
-                i += 2;
-            } else if data[i] <= 0x7F {
-                // ASCII 字符
-                i += 1;
-            } else {
-                valid_gbk = false;
-                break;
-            }
-        }
-
-        if valid_gbk {
-            // 简单的 GBK 到 UTF-8 转换占位符
-            // 实际实现需要使用适当的编码库
-            return Some(format!("[GBK编码数据，长度: {}]", data.len()));
-        }
-    }
-    None
-}
-
-#[cfg(target_os = "windows")]
-fn try_decode_as_windows_1252(data: &[u8]) -> Option<String> {
-    // Windows-1252 检测
-    // 检查是否包含有效的 Windows-1252 字符
-    for &byte in data {
-        if byte == 0x81 || byte == 0x8D || byte == 0x8F || byte == 0x90 || byte == 0x9D {
-            // 这些是 Windows-1252 中的控制字符，在 UTF-8 中无效
-            return Some(format!("[Windows-1252编码数据，长度: {}]", data.len()));
-        }
-    }
-    None
-}
-
 /// 进程信息
 #[derive(Debug, Clone)]
 pub struct ProcessInfo {
@@ -171,21 +97,43 @@ fn get_network_connections() -> Result<HashMap<u16, u32>> {
 
     let output = Command::new("netstat").args(["-ano"]).output()?;
 
-    let stdout = safe_command_output_to_string(&output.stdout);
+    // 使用更简单的字符串处理，避免编码转换问题
+    let connections = parse_netstat_output(&output.stdout)?;
+
+    Ok(connections)
+}
+
+/// 解析 netstat 输出，提取端口和PID映射
+fn parse_netstat_output(stdout: &[u8]) -> Result<HashMap<u16, u32>> {
     let mut connections = HashMap::new();
 
-    for line in stdout.lines().skip(4) {
+    // 直接使用 lossy 转换，避免复杂的编码检测
+    let text = String::from_utf8_lossy(stdout);
+
+    for line in text.lines() {
+        // 跳过标题行和空行
+        if line.trim().is_empty()
+            || line.contains("Active")
+            || line.contains("Proto")
+            || line.contains("协议")
+        {
+            continue;
+        }
+
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 5 {
-            // TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1234
-            // TCP    [::]:135               [::]:0                 LISTENING       1234
-            if let Some(local_addr) = parts.get(1)
-                && let Some(port_str) = local_addr.rsplit(':').next()
-                && let Ok(port) = port_str.parse::<u16>()
-                && let Some(pid_str) = parts.last()
-                && let Ok(pid) = pid_str.parse::<u32>()
-            {
-                connections.insert(port, pid);
+            // 查找最后一个数字作为PID
+            if let Some(pid_str) = parts.last() {
+                if let Ok(pid) = pid_str.parse::<u32>() {
+                    // 查找本地地址和端口（通常是第二个元素）
+                    if let Some(local_addr) = parts.get(1) {
+                        if let Some(port_str) = local_addr.rsplit(':').next() {
+                            if let Ok(port) = port_str.parse::<u16>() {
+                                connections.insert(port, pid);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -279,10 +227,21 @@ fn get_network_connections() -> Result<HashMap<u16, u32>> {
 
     let output = Command::new("lsof").args(["-i", "-n", "-P"]).output()?;
 
-    let stdout = safe_command_output_to_string(&output.stdout);
+    // 使用更简单的字符串处理，避免编码转换问题
+    let connections = parse_lsof_output(&output.stdout)?;
+
+    Ok(connections)
+}
+
+/// 解析 lsof 输出，提取端口和PID映射
+#[cfg(target_os = "macos")]
+fn parse_lsof_output(stdout: &[u8]) -> Result<HashMap<u16, u32>> {
     let mut connections = HashMap::new();
 
-    for line in stdout.lines().skip(1) {
+    // 直接使用 lossy 转换，避免复杂的编码检测
+    let text = String::from_utf8_lossy(stdout);
+
+    for line in text.lines().skip(1) {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 9 {
             // COMMAND   PID   USER   FD   TYPE   DEVICE SIZE/OFF NODE NAME

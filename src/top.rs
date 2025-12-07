@@ -7,6 +7,92 @@ use std::thread;
 use std::time::{Duration, Instant};
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 
+use crate::term::TerminalProfile;
+
+/// 检查是否应该使用备用屏幕
+fn should_use_alt_screen(profile: &TerminalProfile) -> bool {
+    if !profile.alt_screen {
+        return false;
+    }
+
+    // 在某些终端中，备用屏幕可能不稳定，需要额外检查
+    #[cfg(target_os = "windows")]
+    {
+        // 在 PowerShell 中，备用屏幕支持可能不稳定
+        if std::env::var("PSModulePath").is_ok() {
+            // PowerShell 检测 - 保守策略
+            return is_power_shell_conhost();
+        }
+
+        // Windows Terminal 支持
+        if std::env::var("WT_SESSION").is_ok() {
+            return true;
+        }
+
+        // 其他现代终端
+        if std::env::var("TERM_PROGRAM").is_ok()
+            || std::env::var("ConEmuANSI").is_ok()
+            || std::env::var("ANSICON").is_ok()
+        {
+            return true;
+        }
+    }
+
+    // 非 Windows 系统通常支持备用屏幕
+    #[cfg(not(target_os = "windows"))]
+    {
+        return true;
+    }
+
+    false
+}
+
+/// 检测是否为 PowerShell 在 ConHost 中运行
+#[cfg(target_os = "windows")]
+fn is_power_shell_conhost() -> bool {
+    // 检查 TERM 环境变量，如果不存在或者为空，可能是在 conhost 中
+    if let Ok(term) = std::env::var("TERM") {
+        if term.is_empty() || term.to_lowercase().contains("conhost") {
+            return false; // conhost 不支持备用屏幕
+        }
+    } else {
+        return false; // 没有 TERM 变量，可能是传统控制台
+    }
+
+    // 如果有 WT_SESSION，说明在 Windows Terminal 中
+    if std::env::var("WT_SESSION").is_ok() {
+        return true;
+    }
+
+    // 其他情况下假设支持
+    true
+}
+
+/// 安全地进入备用屏幕
+fn enter_alternate_screen() {
+    // 先清除屏幕并移动到顶部
+    print!("\x1b[2J\x1b[H");
+
+    // 尝试进入备用屏幕
+    print!("\x1b[?1049h");
+
+    // 隐藏光标
+    print!("\x1b[?25l");
+
+    let _ = io::stdout().flush();
+}
+
+/// 安全地退出备用屏幕
+fn exit_alternate_screen() {
+    // 显示光标
+    print!("\x1b[?25h");
+
+    // 退出备用屏幕
+    print!("\x1b[?1049l");
+
+    let _ = io::stdout().flush();
+}
+
 /// top 子命令的配置
 pub struct TopOptions {
     pub interval: f32,
@@ -32,13 +118,12 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
 
     // 根据终端能力决定是否使用备用屏幕 / 增量刷新，避免在不支持的控制台显示乱码
     let profile = term::global_profile();
-    let use_alt_screen = !opts.once && profile.alt_screen;
+    let use_alt_screen = !opts.once && should_use_alt_screen(&profile);
     let incremental = !opts.once && profile.incremental;
 
     // 进入备用屏幕，避免污染滚动历史（once 模式不需要）
     if use_alt_screen {
-        print!("\x1b[?1049h");
-        let _ = io::stdout().flush();
+        enter_alternate_screen();
     }
 
     let mut tick: u64 = 0;
@@ -139,8 +224,7 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
 
     // 离开备用屏幕，恢复原屏幕内容
     if use_alt_screen {
-        print!("\x1b[?1049l");
-        let _ = io::stdout().flush();
+        exit_alternate_screen();
     }
 
     Ok(())

@@ -4,7 +4,7 @@
 
 use std::env;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum IconMode {
     Unicode,
     Narrow,
@@ -193,8 +193,16 @@ impl Icons {
             // 检查终端程序
             if let Ok(term_program) = env::var("TERM_PROGRAM") {
                 let term_program = term_program.to_lowercase();
-                if ["vscode", "hyper", "terminus", "windowsterminal", "wt"]
-                    .contains(&term_program.as_str())
+                if [
+                    "vscode",
+                    "hyper",
+                    "terminus",
+                    "windowsterminal",
+                    "wt",
+                    "warp",
+                    "warpterminal",
+                ]
+                .contains(&term_program.as_str())
                 {
                     return true;
                 }
@@ -313,8 +321,16 @@ fn is_likely_non_utf8() -> bool {
         // 检查终端程序
         if let Ok(term_program) = env::var("TERM_PROGRAM") {
             let term_program = term_program.to_lowercase();
-            if ["vscode", "hyper", "terminus", "windowsterminal", "wt"]
-                .contains(&term_program.as_str())
+            if [
+                "vscode",
+                "hyper",
+                "terminus",
+                "windowsterminal",
+                "wt",
+                "warp",
+                "warpterminal",
+            ]
+            .contains(&term_program.as_str())
             {
                 return false;
             }

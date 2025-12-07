@@ -62,7 +62,8 @@ pub fn detect_profile(cli: &Cli) -> TerminalProfile {
             .unwrap_or(false)
         || env::var("ConEmuANSI").is_ok()
         || env::var("ANSICON").is_ok()
-        || env::var("TERM_PROGRAM").is_ok();
+        || env::var("TERM_PROGRAM").is_ok()
+        || is_powerhell_modern();
     let utf8_ok = if is_windows {
         detect_windows_utf8()
             || env::var("LC_ALL")
@@ -115,6 +116,40 @@ fn is_truthy_env(key: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// 检测是否为现代 PowerShell 环境
+fn is_powerhell_modern() -> bool {
+    // 检查是否在 PowerShell 中运行
+    if env::var("PSModulePath").is_ok() {
+        // PowerShell Core 或 Windows PowerShell
+        return true;
+    }
+
+    // 检查其他 PowerShell 环境变量
+    if env::var("PSExecutionPolicyPreference").is_ok()
+        || env::var("PSHOME").is_ok()
+        || env::var("PROFILE").is_ok()
+    {
+        return true;
+    }
+
+    // 检查进程名
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(parent_pid) = std::process::Command::new("powershell")
+            .args(["-Command", "$PID"])
+            .output()
+        {
+            if let Ok(pid_str) = String::from_utf8(parent_pid.stdout) {
+                if !pid_str.trim().is_empty() {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
 fn bool_to_flag(v: bool) -> &'static str {
     if v { "1" } else { "0" }
 }
@@ -162,8 +197,15 @@ fn detect_windows_utf8() -> bool {
 
     // 方法5: 检查终端程序
     if let Ok(term_program) = env::var("TERM_PROGRAM") {
-        if ["vscode", "hyper", "terminus", "windowsterminal"]
-            .contains(&term_program.to_lowercase().as_str())
+        if [
+            "vscode",
+            "hyper",
+            "terminus",
+            "windowsterminal",
+            "warp",
+            "wt",
+        ]
+        .contains(&term_program.to_lowercase().as_str())
         {
             return true;
         }

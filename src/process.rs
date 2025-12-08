@@ -1,5 +1,4 @@
 use anyhow::{Result, anyhow};
-use std::fs::OpenOptions;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
@@ -253,6 +252,8 @@ fn is_directory_locked(path: &Path) -> bool {
 /// Windows特定：更精确地检查文件锁定状态
 #[cfg(target_os = "windows")]
 fn check_file_locking_status(path: &Path) -> bool {
+    use std::fs::OpenOptions;
+
     // 尝试多种方式打开文件来区分锁定和权限问题
     let path_str = path.to_string_lossy();
 

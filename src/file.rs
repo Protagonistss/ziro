@@ -125,7 +125,7 @@ fn is_windows_system_critical_path(path_str: &str) -> bool {
 
     system_critical_paths
         .iter()
-        .any(|critical| path_str == *critical || path_str.starts_with(&format!("{}\\", critical)))
+        .any(|critical| path_str == *critical || path_str.starts_with(&format!("{critical}\\")))
 }
 
 /// 获取Windows系统根路径（只保护真正不可删除的系统目录）
@@ -151,7 +151,7 @@ fn is_unix_system_critical_path(path_str: &str) -> bool {
 
     critical_paths
         .iter()
-        .any(|critical| path_str == *critical || path_str.starts_with(&format!("{}/", critical)))
+        .any(|critical| path_str == *critical || path_str.starts_with(&format!("{critical}/")))
 }
 
 /// 验证路径是否安全
@@ -322,7 +322,7 @@ pub fn remove_files(
             && verbose
         {
             eprintln!("{}", theme.icon_error());
-            eprintln!("错误: {}", e);
+            eprintln!("错误: {e}");
 
             // 尝试提取错误类型并提供建议
             if let Some(deletion_error) = extract_deletion_error(e) {
@@ -489,16 +489,16 @@ fn remove_file_with_fallback(path: &Path) -> Result<()> {
                     if try_remove_readonly_attribute(path) && fs::remove_file(path).is_ok() {
                         Ok(())
                     } else {
-                        Err(anyhow!("{}", deletion_error))
+                        Err(anyhow!("{deletion_error}"))
                     }
                 }
                 DeletionError::FileLocked(_) => {
                     // 文件锁定错误将在上层处理
-                    Err(anyhow!("{}", deletion_error))
+                    Err(anyhow!("{deletion_error}"))
                 }
                 _ => {
                     // 其他错误类型，继续后续处理
-                    Err(anyhow!("{}", deletion_error))
+                    Err(anyhow!("{deletion_error}"))
                 }
             }
         }

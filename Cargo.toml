@@ -35,4 +35,3 @@ winapi = { version = "0.3", features = ["wincon"] }
 collapsible_if = "allow"
 redundant_pattern_matching = "allow"
 needless_return = "allow"
-manual_is_multiple_of = "allow"

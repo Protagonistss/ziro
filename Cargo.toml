@@ -29,7 +29,7 @@ colored = "2.1"
 console = "0.15"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["wincon"] }
+winapi = { version = "0.3", features = ["consoleapi", "handleapi", "processenv", "winbase", "wincon"] }
 
 [lints.clippy]
 collapsible_if = "allow"

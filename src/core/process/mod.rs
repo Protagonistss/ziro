@@ -268,8 +268,7 @@ fn check_file_locking_status(path: &Path) -> bool {
         .args([
             "-Command",
             &format!(
-                "Get-Process | Where-Object {{ $_.Modules.FileName -eq '{}' }} | Measure-Object",
-                path_str
+                "Get-Process | Where-Object {{ $_.Modules.FileName -eq '{path_str}' }} | Measure-Object"
             ),
         ])
         .output()
@@ -477,7 +476,7 @@ fn find_processes_with_wmic(path_str: &str) -> Result<Vec<u32>> {
         .args([
             "process",
             "where",
-            &format!("ExecutablePath like '%{}%'", path_str),
+            &format!("ExecutablePath like '%{path_str}%'"),
             "get",
             "ProcessId",
             "/format:list",

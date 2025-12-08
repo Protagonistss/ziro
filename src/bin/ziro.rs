@@ -4,7 +4,9 @@ use ziro::cli::{
     Cli, Commands, display_version, handle_find, handle_kill, handle_list, handle_remove,
     handle_top,
 };
-use ziro::platform::{encoding, term};
+#[cfg(target_os = "windows")]
+use ziro::platform::encoding;
+use ziro::platform::term;
 use ziro::ui;
 
 fn main() {

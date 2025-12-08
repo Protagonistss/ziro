@@ -50,6 +50,12 @@ pub fn detect_profile(cli: &Cli) -> TerminalProfile {
 
     // 检测终端能力
     let is_windows = cfg!(target_os = "windows");
+
+    #[cfg(target_os = "windows")]
+    let vt_supported = has_virtual_terminal_processing();
+    #[cfg(not(target_os = "windows"))]
+    let vt_supported = true;
+
     let looks_modern = env::var("WT_SESSION").is_ok()
         || env::var("TERM")
             .map(|t| {
@@ -63,6 +69,7 @@ pub fn detect_profile(cli: &Cli) -> TerminalProfile {
         || env::var("ConEmuANSI").is_ok()
         || env::var("ANSICON").is_ok()
         || env::var("TERM_PROGRAM").is_ok()
+        || vt_supported
         || is_modern_terminal();
     let utf8_ok = if is_windows {
         detect_windows_utf8()
@@ -87,7 +94,7 @@ pub fn detect_profile(cli: &Cli) -> TerminalProfile {
     //    - 检测到传统控制台环境（conhost）
     let should_degrade = profile.plain
         || (!is_windows && !utf8_ok)
-        || (is_windows && should_degrade_on_windows(utf8_ok, looks_modern));
+        || (is_windows && should_degrade_on_windows(utf8_ok, looks_modern, vt_supported));
 
     if should_degrade {
         profile.plain = true;
@@ -239,7 +246,12 @@ fn is_windows_terminal_or_conemu() -> bool {
 }
 
 /// Windows 环境下的降级决策函数
-fn should_degrade_on_windows(utf8_ok: bool, looks_modern: bool) -> bool {
+fn should_degrade_on_windows(utf8_ok: bool, looks_modern: bool, vt_supported: bool) -> bool {
+    // 已经确认支持虚拟终端处理，直接认为安全
+    if vt_supported {
+        return false;
+    }
+
     // 情况1：既非 UTF-8 又非现代终端 -> 明确降级
     if !utf8_ok && !looks_modern {
         return true;
@@ -312,6 +324,35 @@ fn is_very_modern_terminal() -> bool {
     }
 
     false
+}
+
+/// 检测控制台是否启用了虚拟终端处理（仅 Windows）
+#[cfg(target_os = "windows")]
+fn has_virtual_terminal_processing() -> bool {
+    use winapi::um::consoleapi::GetConsoleMode;
+    use winapi::um::handleapi::INVALID_HANDLE_VALUE;
+    use winapi::um::processenv::GetStdHandle;
+    use winapi::um::winbase::STD_OUTPUT_HANDLE;
+    use winapi::um::wincon::ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+
+    unsafe {
+        let handle = GetStdHandle(STD_OUTPUT_HANDLE);
+        if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+            return false;
+        }
+
+        let mut mode: u32 = 0;
+        if GetConsoleMode(handle, &mut mode) == 0 {
+            return false;
+        }
+
+        mode & ENABLE_VIRTUAL_TERMINAL_PROCESSING != 0
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn has_virtual_terminal_processing() -> bool {
+    true
 }
 
 fn bool_to_flag(v: bool) -> &'static str {

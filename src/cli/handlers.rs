@@ -101,7 +101,7 @@ pub fn handle_remove(
         return Ok(());
     }
 
-    if !ui::confirm_deletion(&files, force, dry_run)? {
+    if !ui::confirm_deletion(&files, force || anyway, dry_run)? {
         println!("{}", "操作已取消".bright_yellow());
         return Ok(());
     }

@@ -323,7 +323,7 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
 }
 
 /// 确认删除操作
-pub fn confirm_deletion(files: &[FileInfo], force: bool, dry_run: bool) -> Result<bool> {
+pub fn confirm_deletion(files: &[FileInfo], skip_confirm: bool, dry_run: bool) -> Result<bool> {
     let theme = Theme::new();
 
     if dry_run {
@@ -336,7 +336,7 @@ pub fn confirm_deletion(files: &[FileInfo], force: bool, dry_run: bool) -> Resul
         return Ok(true);
     }
 
-    if force {
+    if skip_confirm {
         return Ok(true);
     }
 

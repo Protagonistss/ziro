@@ -65,7 +65,7 @@ pub enum Commands {
         /// 显示详细的删除过程信息
         #[arg(long = "verbose")]
         verbose: bool,
-        /// 强制删除被进程占用的文件（需要终止相关进程）
+        /// 忽略占用提示，直接尝试删除
         #[arg(long = "anyway")]
         anyway: bool,
     },

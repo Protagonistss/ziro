@@ -1,5 +1,5 @@
-use crate::process;
-use crate::theme::Theme;
+use crate::core::process;
+use crate::ui::Theme;
 use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::io;
@@ -540,7 +540,7 @@ fn remove_symlink_safely(path: &Path) -> Result<()> {
         };
 
         // 检查是否链接到系统关键目录
-        if crate::file::is_system_critical_path(&target_path) {
+        if is_system_critical_path(&target_path) {
             eprintln!(
                 "警告: 符号链接指向系统关键路径，跳过删除: {} -> {}",
                 path.display(),
@@ -620,7 +620,7 @@ fn remove_symlink_directory_safely(path: &Path) -> Result<()> {
         };
 
         // 检查是否链接到系统关键目录
-        if crate::file::is_system_critical_path(&target_path) {
+        if is_system_critical_path(&target_path) {
             eprintln!(
                 "警告: 符号链接目录指向系统关键路径，跳过删除: {} -> {}",
                 path.display(),

@@ -1,4 +1,5 @@
-use crate::term;
+use crate::platform::term;
+use crate::platform::term::TerminalProfile;
 use crate::ui;
 use crate::ui::TopRenderOptions;
 use anyhow::Result;
@@ -6,8 +7,6 @@ use std::io::{self, Write};
 use std::thread;
 use std::time::{Duration, Instant};
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
-
-use crate::term::TerminalProfile;
 
 /// 检查是否应该使用备用屏幕（改进版本）
 fn should_use_alt_screen(profile: &TerminalProfile) -> bool {

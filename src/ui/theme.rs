@@ -1,5 +1,5 @@
-use crate::icons;
-use crate::icons::StyledEmoji;
+use crate::ui::icons;
+use crate::ui::icons::StyledEmoji;
 use colored::{Color, Colorize};
 use std::env;
 
@@ -144,5 +144,11 @@ impl Theme {
 
     pub fn icon_link(&self) -> String {
         icons::icons().link().to_string()
+    }
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        Self::new()
     }
 }

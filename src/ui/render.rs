@@ -1,7 +1,7 @@
-use crate::file::FileInfo;
-use crate::port::PortInfo;
-use crate::theme::Theme;
-use crate::top::ProcessView;
+use crate::core::fs_ops::FileInfo;
+use crate::core::port::PortInfo;
+use crate::core::top::ProcessView;
+use crate::ui::Theme;
 use anyhow::Result;
 use console::{Alignment, pad_str};
 use inquire::{Confirm, MultiSelect};
@@ -270,7 +270,10 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
         theme.title("统计:"),
         theme.success(format!("{file_count} 个文件")),
         theme.blue(format!("{dir_count} 个目录")),
-        theme.warn(format!("总大小: {}", crate::file::format_size(total_size)))
+        theme.warn(format!(
+            "总大小: {}",
+            crate::core::fs_ops::format_size(total_size)
+        ))
     );
     println!();
 
@@ -286,7 +289,7 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
         };
 
         let size_str = if !file.is_dir && !file.is_symlink {
-            let size = format!(" ({})", crate::file::format_size(file.size));
+            let size = format!(" ({})", crate::core::fs_ops::format_size(file.size));
             theme.muted(size)
         } else {
             String::new()
@@ -517,8 +520,8 @@ pub fn display_top(
         theme.muted(format!("[{status_icon}]"))
     ));
 
-    let mem_used_str = crate::file::format_size(opts.used_memory);
-    let mem_total_str = crate::file::format_size(opts.total_memory);
+    let mem_used_str = crate::core::fs_ops::format_size(opts.used_memory);
+    let mem_total_str = crate::core::fs_ops::format_size(opts.total_memory);
     let mem_pct = if opts.total_memory > 0 {
         (opts.used_memory as f64 / opts.total_memory as f64) * 100.0
     } else {
@@ -570,7 +573,7 @@ pub fn display_top(
             _ => theme.muted(&rank_plain),
         };
 
-        let mem_str = crate::file::format_size(process.memory_bytes);
+        let mem_str = crate::core::fs_ops::format_size(process.memory_bytes);
         let mem_pct_str = format!("{:.1}%", process.memory_percent);
         let cpu_str = if opts.show_cpu {
             format!("{:.1}%", process.cpu)

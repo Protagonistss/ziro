@@ -505,7 +505,11 @@ pub fn display_top(
     let mut lines: Vec<String> = Vec::new();
 
     // 顶部摘要，添加实时状态指示
-    let status_icon = if opts.refresh % 2 == 0 { "●" } else { "◐" };
+    let status_icon = if opts.refresh.is_multiple_of(2) {
+        "●"
+    } else {
+        "◐"
+    };
     lines.push(format!(
         "{} {} {}",
         theme.icon_lightning(),

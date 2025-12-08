@@ -143,10 +143,10 @@ impl Icons {
     /// 检测终端是否支持 Unicode emoji
     fn detect_unicode_support() -> bool {
         // 首先检查明确的语言环境设置
-        if let Ok(locale) = env::var("LC_ALL").or_else(|_| env::var("LANG")) {
-            if locale.to_lowercase().contains("utf-8") || locale.contains("65001") {
-                return true;
-            }
+        if let Ok(locale) = env::var("LC_ALL").or_else(|_| env::var("LANG"))
+            && (locale.to_lowercase().contains("utf-8") || locale.contains("65001"))
+        {
+            return true;
         }
 
         // 检查终端类型

@@ -50,11 +50,7 @@ pub fn detect_profile(cli: &Cli) -> TerminalProfile {
 
     // 检测终端能力
     let is_windows = cfg!(target_os = "windows");
-
-    #[cfg(target_os = "windows")]
     let vt_supported = has_virtual_terminal_processing();
-    #[cfg(not(target_os = "windows"))]
-    let vt_supported = true;
 
     let looks_modern = env::var("WT_SESSION").is_ok()
         || env::var("TERM")

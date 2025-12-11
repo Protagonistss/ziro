@@ -86,6 +86,10 @@ impl Theme {
         self.paint(text, Color::Yellow, false)
     }
 
+    pub fn warning(&self, text: impl AsRef<str>) -> String {
+        self.paint(text, Color::Yellow, false)
+    }
+
     pub fn info(&self, text: impl AsRef<str>) -> String {
         self.paint(text, Color::Cyan, false)
     }

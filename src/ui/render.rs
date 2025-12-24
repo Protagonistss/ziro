@@ -1,5 +1,6 @@
 use crate::core::fs_ops::FileInfo;
 use crate::core::port::PortInfo;
+use crate::core::process::FileLockInfo;
 use crate::core::top::ProcessView;
 use crate::ui::Theme;
 use anyhow::Result;
@@ -246,6 +247,80 @@ pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
             theme.accent(format!("{:.1}%", info.process.cpu_usage)),
             theme.accent(format!("{} MB", info.process.memory / 1024 / 1024))
         );
+
+        if !is_last {
+            println!("{continuation}");
+        }
+    }
+}
+
+/// 显示文件/目录占用情况
+pub fn display_file_locks(infos: &[FileLockInfo]) {
+    let theme = Theme::new();
+
+    if infos.is_empty() {
+        println!("{}", theme.warn("未找到需要检查的路径"));
+        return;
+    }
+
+    println!("{} {}", theme.icon_search(), theme.title("文件占用查询"));
+    println!();
+
+    let total = infos.len();
+    for (index, info) in infos.iter().enumerate() {
+        let is_last = index == total - 1;
+        let branch = if is_last { "└─" } else { "├─" };
+        let continuation = if is_last { "   " } else { "│  " };
+
+        let kind = if info.path.is_dir() {
+            theme.blue("目录")
+        } else {
+            theme.success("文件")
+        };
+
+        let status = if info.locked {
+            theme.error("占用中")
+        } else {
+            theme.success("未占用")
+        };
+
+        println!(
+            "{branch} {} {} {}",
+            theme.highlight(info.path.display().to_string()),
+            kind,
+            status
+        );
+
+        if info.processes.is_empty() {
+            if info.locked {
+                println!(
+                    "{continuation}└─ {}",
+                    theme.warn("未找到占用进程，可能需要管理员权限或 handle.exe")
+                );
+            }
+        } else {
+            let proc_total = info.processes.len();
+            for (proc_index, proc_info) in info.processes.iter().enumerate() {
+                let proc_last = proc_index == proc_total - 1;
+                let proc_branch = if proc_last { "└─" } else { "├─" };
+                let proc_continuation = if proc_last { "   " } else { "│  " };
+
+                println!(
+                    "{continuation}{proc_branch} {} {} ({})",
+                    theme.info("进程"),
+                    theme.success(&proc_info.name),
+                    theme.muted(format!("PID: {}", proc_info.pid))
+                );
+
+                if !proc_info.cmd.is_empty() {
+                    println!(
+                        "{continuation}{proc_continuation} {} {}",
+                        theme.info("命令"),
+                        theme.muted(truncate_string(&proc_info.cmd, 80))
+                    );
+                }
+            }
+        }
 
         if !is_last {
             println!("{continuation}");

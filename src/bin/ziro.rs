@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use ziro::cli::{
     Cli, Commands, display_version, handle_find, handle_kill, handle_list, handle_remove,
-    handle_top,
+    handle_top, handle_who,
 };
 #[cfg(target_os = "windows")]
 use ziro::platform::encoding;
@@ -34,6 +34,7 @@ fn run() -> Result<()> {
         Some(Commands::Find { ports }) => handle_find(ports)?,
         Some(Commands::Kill { ports, force }) => handle_kill(ports, force)?,
         Some(Commands::List) => handle_list()?,
+        Some(Commands::Who { paths }) => handle_who(paths)?,
         Some(Commands::Remove {
             paths,
             force,

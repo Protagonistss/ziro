@@ -1,8 +1,22 @@
 use anyhow::{Result, anyhow};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
+
+#[derive(Debug, Clone)]
+pub struct FileLockProcess {
+    pub pid: u32,
+    pub name: String,
+    pub cmd: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct FileLockInfo {
+    pub path: PathBuf,
+    pub locked: bool,
+    pub processes: Vec<FileLockProcess>,
+}
 
 /// 安全地转换命令输出为字符串，尝试多种编码方式
 fn safe_command_output_to_string(stdout: &[u8]) -> String {
@@ -379,6 +393,54 @@ pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
     Ok(pids)
 }
 
+pub fn inspect_file_locks(paths: &[PathBuf]) -> Result<Vec<FileLockInfo>> {
+    let mut sys = System::new_with_specifics(
+        RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
+    );
+    sys.refresh_all();
+
+    let mut results = Vec::new();
+
+    for path in paths {
+        let mut locked = is_file_locked(path);
+        let mut pids = find_processes_by_file(path).unwrap_or_default();
+        pids.sort_unstable();
+        pids.dedup();
+
+        let mut processes = Vec::new();
+        for pid in pids {
+            if let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) {
+                let name = process.name().to_string_lossy().to_string();
+                let cmd = process
+                    .cmd()
+                    .iter()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .collect::<Vec<String>>()
+                    .join(" ");
+                processes.push(FileLockProcess { pid, name, cmd });
+            } else {
+                processes.push(FileLockProcess {
+                    pid,
+                    name: "unknown".to_string(),
+                    cmd: String::new(),
+                });
+            }
+        }
+
+        if !processes.is_empty() {
+            locked = true;
+        }
+
+        results.push(FileLockInfo {
+            path: path.clone(),
+            locked,
+            processes,
+        });
+    }
+
+    Ok(results)
+}
+
 /// Windows特定：使用 handle.exe 查找占用进程
 #[cfg(target_os = "windows")]
 fn find_processes_with_handle(path_str: &str) -> Result<Vec<u32>> {
@@ -520,4 +582,37 @@ fn find_processes_with_powershell(_path_str: &str) -> Result<Vec<u32>> {
 #[cfg(not(target_os = "windows"))]
 fn find_processes_with_wmic(_path_str: &str) -> Result<Vec<u32>> {
     Ok(vec![])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_inspect_file_locks_for_temp_file() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join(format!(
+            "ziro_lock_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+
+        fs::write(&file_path, b"test").unwrap();
+
+        let infos = inspect_file_locks(std::slice::from_ref(&file_path)).unwrap();
+        assert_eq!(infos.len(), 1);
+        assert_eq!(infos[0].path, file_path);
+
+        if infos[0].processes.is_empty() {
+            assert!(!infos[0].locked);
+        } else {
+            assert!(infos[0].locked);
+        }
+
+        let _ = fs::remove_file(&file_path);
+    }
 }

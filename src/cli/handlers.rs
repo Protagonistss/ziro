@@ -69,6 +69,18 @@ pub fn handle_list() -> Result<()> {
     Ok(())
 }
 
+pub fn handle_who(paths: Vec<std::path::PathBuf>) -> Result<()> {
+    if paths.is_empty() {
+        println!("请至少指定一个文件或目录路径");
+        return Ok(());
+    }
+
+    fs_ops::validate_paths(&paths)?;
+    let infos = process::inspect_file_locks(&paths)?;
+    ui::display_file_locks(&infos);
+    Ok(())
+}
+
 pub fn handle_top(interval: f32, limit: usize, cpu: bool, cmd: bool, once: bool) -> Result<()> {
     let opts = top::TopOptions {
         interval,

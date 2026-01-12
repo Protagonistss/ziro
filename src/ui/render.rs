@@ -430,6 +430,119 @@ pub fn confirm_deletion(files: &[FileInfo], skip_confirm: bool, dry_run: bool) -
     Ok(confirm)
 }
 
+/// 检查文件占用并处理
+/// - 默认：显示占用信息，询问用户是否继续
+/// --anyway：自动终止占用进程，然后继续
+/// 返回 true 表示继续删除，false 表示取消操作
+pub fn check_and_warn_file_locks(files: &[FileInfo], anyway: bool) -> Result<bool> {
+    use crate::core::process::{inspect_file_locks, kill_processes_force};
+    use std::path::PathBuf;
+
+    let theme = Theme::new();
+
+    // 提取所有文件路径
+    let paths: Vec<PathBuf> = files.iter().map(|f| f.path.clone()).collect();
+
+    // 检查文件占用
+    let lock_infos = match inspect_file_locks(&paths) {
+        Ok(infos) => infos,
+        Err(e) => {
+            // 检查失败，警告但允许继续
+            eprintln!(
+                "{} {}: {}",
+                theme.icon_warning(),
+                theme.warn("无法检查文件占用"),
+                e
+            );
+            eprintln!("{}", theme.muted("将继续执行删除操作"));
+            return Ok(true);
+        }
+    };
+
+    // 过滤出真正被占用的文件
+    let locked_files: Vec<FileLockInfo> = lock_infos
+        .into_iter()
+        .filter(|info| info.locked || !info.processes.is_empty())
+        .collect();
+
+    // 如果没有占用，直接继续
+    if locked_files.is_empty() {
+        return Ok(true);
+    }
+
+    // 使用 --anyway 时：自动终止占用进程
+    if anyway {
+        // 收集所有占用进程的 PID
+        let mut pids = Vec::new();
+        for info in &locked_files {
+            for proc in &info.processes {
+                if !pids.contains(&proc.pid) {
+                    pids.push(proc.pid);
+                }
+            }
+        }
+
+        // 显示要终止的进程信息
+        println!();
+        println!(
+            "{} {}",
+            theme.icon_warning(),
+            theme.error_bold("检测到文件被占用，正在终止占用进程...")
+        );
+        println!();
+        display_file_locks(&locked_files);
+        println!();
+
+        // 强制终止进程
+        let results = kill_processes_force(&pids);
+
+        // 显示终止结果
+        for (pid, result) in results {
+            match result {
+                Ok(_) => {
+                    println!(
+                        "{} {}",
+                        theme.icon_success(),
+                        theme.muted(format!("已终止进程 PID: {}", pid))
+                    );
+                }
+                Err(e) => {
+                    println!(
+                        "{} {}",
+                        theme.icon_error(),
+                        theme.error(format!("无法终止进程 PID {}: {}", pid, e))
+                    );
+                }
+            }
+        }
+        println!();
+
+        return Ok(true);
+    }
+
+    // 默认情况：显示占用信息并询问用户
+    println!();
+    println!(
+        "{} {}",
+        theme.icon_warning(),
+        theme.error_bold("检测到文件被占用")
+    );
+    println!();
+
+    // 使用现有的 display_file_locks 显示详细信息
+    display_file_locks(&locked_files);
+
+    println!();
+
+    // 询问用户是否继续
+    let confirm = Confirm::new("这些文件正在被使用，是否继续尝试删除？")
+        .with_default(false)
+        .with_help_message("使用 --anyway 可自动终止占用进程并删除")
+        .prompt()?;
+
+    Ok(confirm)
+}
+
 /// 显示删除结果
 pub fn display_removal_results(
     results: &[(std::path::PathBuf, Result<()>)],

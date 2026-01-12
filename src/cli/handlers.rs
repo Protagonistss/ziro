@@ -118,6 +118,12 @@ pub fn handle_remove(
         return Ok(());
     }
 
+    // 检查文件占用并警告用户
+    if !ui::check_and_warn_file_locks(&files, anyway)? {
+        println!("{}", "操作已取消".bright_yellow());
+        return Ok(());
+    }
+
     let results = fs_ops::remove_files(&files, dry_run, verbose, anyway);
     ui::display_removal_results(&results, dry_run, verbose);
     Ok(())

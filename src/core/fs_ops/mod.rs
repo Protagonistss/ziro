@@ -201,13 +201,192 @@ pub fn remove_files(
 /// Windows 上删除包含符号链接的目录
 #[cfg(target_os = "windows")]
 fn remove_dir_all_with_symlinks(path: &Path) -> Result<()> {
-    // 先尝试移除所有只读属性
-    if let Err(_) = remove_readonly_recursively(path) {
-        // 忽略错误，继续尝试删除
+    use std::os::windows::ffi::OsStrExt;
+
+    // 转换为 Windows 长路径格式 (\\?\ 前缀)
+    // 这允许绕过 MAX_PATH (260 字符) 限制
+    let long_path = to_long_path(path)?;
+
+    // 使用 Windows API 删除目录
+    unsafe {
+        use windows_sys::Win32::Storage::FileSystem::{
+            DeleteFileW, RemoveDirectoryW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
+            GetFileAttributesW, INVALID_FILE_ATTRIBUTES, SetFileAttributesW, FILE_ATTRIBUTE_READONLY,
+        };
+        use windows_sys::Win32::Foundation::GetLastError;
+
+        let path_wide: Vec<u16> = long_path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        // 获取文件属性
+        let attrs = GetFileAttributesW(path_wide.as_ptr());
+        if attrs == INVALID_FILE_ATTRIBUTES {
+            return Err(anyhow!("无法获取文件属性: {}", path.display()));
+        }
+
+        // 检查是否为符号链接（重解析点）
+        let is_reparse_point = (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+
+        if is_reparse_point {
+            // 对于符号链接，使用 DeleteFileW
+            if DeleteFileW(path_wide.as_ptr()) == 0 {
+                let err = GetLastError();
+                return Err(anyhow!("无法删除符号链接: {}, 错误代码: {}", path.display(), err));
+            }
+        } else if (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0 {
+            // 对于目录，递归删除内容
+            match remove_directory_recursive(&long_path) {
+                Ok(_) => {},
+                Err(e) => {
+                    let err = GetLastError();
+                    return Err(anyhow!("递归删除目录内容失败: {}, 原始错误: {}, Windows错误代码: {}", path.display(), e, err));
+                }
+            }
+
+            // 移除根目录的只读属性
+            SetFileAttributesW(path_wide.as_ptr(), attrs & !FILE_ATTRIBUTE_READONLY);
+
+            // 删除空目录
+            if RemoveDirectoryW(path_wide.as_ptr()) == 0 {
+                let err = GetLastError();
+                return Err(anyhow!("无法删除目录: {}, Windows错误代码: {}", path.display(), err));
+            }
+        } else {
+            // 移除文件的只读属性
+            SetFileAttributesW(path_wide.as_ptr(), attrs & !FILE_ATTRIBUTE_READONLY);
+
+            // 对于文件，使用 DeleteFileW
+            if DeleteFileW(path_wide.as_ptr()) == 0 {
+                let err = GetLastError();
+                return Err(anyhow!("无法删除文件: {}, Windows错误代码: {}", path.display(), err));
+            }
+        }
     }
 
-    // 使用 remove_dir_all，这在 Windows 上可以处理符号链接
-    fs::remove_dir_all(path).with_context(|| format!("无法删除目录: {}", path.display()))
+    Ok(())
+}
+
+/// 递归删除目录内容（使用长路径）
+#[cfg(target_os = "windows")]
+unsafe fn remove_directory_recursive(path: &Path) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        DeleteFileW, FindFirstFileW, FindNextFileW, FindClose, RemoveDirectoryW,
+        FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, WIN32_FIND_DATAW,
+        SetFileAttributesW, FILE_ATTRIBUTE_READONLY,
+    };
+
+    // 构建搜索模式：路径\*
+    let mut search_pattern = path.to_path_buf();
+    search_pattern.push("*");
+    let search_wide: Vec<u16> = search_pattern
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let mut find_data: WIN32_FIND_DATAW = unsafe { std::mem::zeroed() };
+    let find_handle = unsafe { FindFirstFileW(search_wide.as_ptr(), &mut find_data) };
+
+    if find_handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
+        // 目录为空或出错，返回成功
+        return Ok(());
+    }
+
+    loop {
+        // 跳过 . 和 ..
+        let name = Vec::from(
+            find_data.cFileName[..]
+                .iter()
+                .take_while(|&&c| c != 0)
+                .copied()
+                .collect::<Vec<_>>(),
+        );
+        let name_str = String::from_utf16_lossy(&name);
+
+        if name_str != "." && name_str != ".." {
+            let mut item_path = path.to_path_buf();
+            item_path.push(&name_str);
+
+            let item_wide: Vec<u16> = item_path
+                .as_os_str()
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+
+            let is_dir = (find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+            let is_reparse_point = (find_data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+
+            if is_dir && !is_reparse_point {
+                // 递归删除子目录
+                unsafe { remove_directory_recursive(&item_path)?; }
+                // 移除只读属性
+                unsafe { SetFileAttributesW(item_wide.as_ptr(), find_data.dwFileAttributes & !FILE_ATTRIBUTE_READONLY); }
+                // 删除空目录
+                if unsafe { RemoveDirectoryW(item_wide.as_ptr()) } == 0 {
+                    unsafe { FindClose(find_handle); }
+                    return Err(anyhow!("无法删除目录: {}", item_path.display()));
+                }
+            } else {
+                // 移除只读属性
+                unsafe { SetFileAttributesW(item_wide.as_ptr(), find_data.dwFileAttributes & !FILE_ATTRIBUTE_READONLY); }
+                // 删除文件或符号链接
+                if unsafe { DeleteFileW(item_wide.as_ptr()) } == 0 {
+                    unsafe { FindClose(find_handle); }
+                    return Err(anyhow!("无法删除文件: {}", item_path.display()));
+                }
+            }
+        }
+
+        if unsafe { FindNextFileW(find_handle, &mut find_data) } == 0 {
+            break;
+        }
+    }
+
+    unsafe { FindClose(find_handle); }
+    Ok(())
+}
+
+/// 将路径转换为 Windows 长路径格式
+#[cfg(target_os = "windows")]
+fn to_long_path(path: &Path) -> Result<PathBuf> {
+    // 尝试获取绝对路径，如果失败则使用原始路径
+    let absolute = match fs::canonicalize(path) {
+        Ok(p) => p,
+        Err(_) => {
+            // 如果 canonicalize 失败（可能是路径太长），使用绝对路径
+            if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                std::env::current_dir()
+                    .ok()
+                    .map(|cwd| cwd.join(path))
+                    .unwrap_or_else(|| path.to_path_buf())
+            }
+        }
+    };
+
+    // 检查是否已经是 UNC 路径
+    let path_str = absolute.to_string_lossy().to_string();
+    let has_prefix = path_str.starts_with(r"\\?\") || path_str.starts_with(r"\\?\UNC\");
+
+    if has_prefix {
+        return Ok(absolute);
+    }
+
+    // 添加 \\?\ 前缀
+    let long_path = if path_str.starts_with(r"\\") {
+        // UNC 路径：\\?\UNC\server\share
+        PathBuf::from(format!(r"\\?\UNC\{}", &path_str[2..]))
+    } else {
+        // 普通路径：\\?\C:\path
+        PathBuf::from(format!(r"\\?{}", path_str))
+    };
+
+    Ok(long_path)
 }
 
 /// 递归移除目录及其内容的只读属性

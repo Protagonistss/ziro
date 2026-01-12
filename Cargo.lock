@@ -775,4 +775,5 @@ dependencies = [
  "inquire",
  "sysinfo",
  "winapi",
+ "windows-sys 0.59.0",
 ]

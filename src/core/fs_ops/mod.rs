@@ -110,51 +110,71 @@ pub fn remove_files(
     _anyway: bool,
 ) -> Vec<(PathBuf, Result<()>)> {
     let theme = Theme::new();
-    let mut results = Vec::new();
 
+    // Windows 特殊处理：尝试批量删除
     #[cfg(target_os = "windows")]
-    {
-        // Windows 特殊处理：查找用户直接指定的根目录
-        // 在 collect_files_to_remove 中，根目录是最后添加的
-        if let Some(root_dir) = files.iter().find(|f| {
-            f.is_dir
-                && !files
-                    .iter()
-                    .any(|other| other.path != f.path && f.path.starts_with(&other.path))
-        }) {
-            if !dry_run {
-                // 尝试直接使用 remove_dir_all 删除整个目录树
-                match remove_dir_all_with_symlinks(&root_dir.path) {
-                    Ok(_) => {
-                        if verbose {
-                            println!(
-                                "{} {}",
-                                theme.icon_success(),
-                                theme.muted(format!("删除 {}", root_dir.path.display()))
-                            );
-                        }
-                        results.push((root_dir.path.clone(), Ok(())));
-                        return results;
-                    }
-                    Err(e) => {
-                        if verbose {
-                            println!(
-                                "{} {}",
-                                theme.icon_warning(),
-                                theme.warning(format!("批量删除失败，尝试逐个删除: {}", e))
-                            );
-                        }
-                        // 如果批量删除失败，继续逐个删除
-                        // 跳出 Windows 特殊处理，使用常规逐个删除
-                    }
-                }
-            } else {
-                // Dry run 模式，直接返回
-                results.push((root_dir.path.clone(), Ok(())));
-                return results;
+    if let Some(results) = try_windows_bulk_remove(files, dry_run, verbose, &theme) {
+        return results;
+    }
+
+    // 通用逐个删除逻辑
+    remove_files_individually(files, dry_run, verbose, &theme)
+}
+
+/// Windows 特殊处理：尝试批量删除根目录
+#[cfg(target_os = "windows")]
+fn try_windows_bulk_remove(
+    files: &[FileInfo],
+    dry_run: bool,
+    verbose: bool,
+    theme: &Theme,
+) -> Option<Vec<(PathBuf, Result<()>)>> {
+    // 查找用户直接指定的根目录
+    let root_dir = files.iter().find(|f| {
+        f.is_dir
+            && !files
+                .iter()
+                .any(|other| other.path != f.path && f.path.starts_with(&other.path))
+    })?;
+
+    if dry_run {
+        return Some(vec![(root_dir.path.clone(), Ok(()))]);
+    }
+
+    // 尝试直接使用 remove_dir_all 删除整个目录树
+    match remove_dir_all_with_symlinks(&root_dir.path) {
+        Ok(_) => {
+            if verbose {
+                println!(
+                    "{} {}",
+                    theme.icon_success(),
+                    theme.muted(format!("删除 {}", root_dir.path.display()))
+                );
             }
+            Some(vec![(root_dir.path.clone(), Ok(()))])
+        }
+        Err(e) => {
+            if verbose {
+                println!(
+                    "{} {}",
+                    theme.icon_warning(),
+                    theme.warning(format!("批量删除失败，尝试逐个删除: {}", e))
+                );
+            }
+            // 批量删除失败，返回 None 让调用者使用逐个删除
+            None
         }
     }
+}
+
+/// 逐个删除文件（通用逻辑）
+fn remove_files_individually(
+    files: &[FileInfo],
+    dry_run: bool,
+    verbose: bool,
+    theme: &Theme,
+) -> Vec<(PathBuf, Result<()>)> {
+    let mut results = Vec::new();
 
     // 确保先删文件后删目录（深度优先）
     let mut sorted = files.to_vec();
@@ -209,11 +229,12 @@ fn remove_dir_all_with_symlinks(path: &Path) -> Result<()> {
 
     // 使用 Windows API 删除目录
     unsafe {
-        use windows_sys::Win32::Storage::FileSystem::{
-            DeleteFileW, RemoveDirectoryW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
-            GetFileAttributesW, INVALID_FILE_ATTRIBUTES, SetFileAttributesW, FILE_ATTRIBUTE_READONLY,
-        };
         use windows_sys::Win32::Foundation::GetLastError;
+        use windows_sys::Win32::Storage::FileSystem::{
+            DeleteFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_READONLY,
+            FILE_ATTRIBUTE_REPARSE_POINT, GetFileAttributesW, INVALID_FILE_ATTRIBUTES,
+            RemoveDirectoryW, SetFileAttributesW,
+        };
 
         let path_wide: Vec<u16> = long_path
             .as_os_str()
@@ -234,15 +255,24 @@ fn remove_dir_all_with_symlinks(path: &Path) -> Result<()> {
             // 对于符号链接，使用 DeleteFileW
             if DeleteFileW(path_wide.as_ptr()) == 0 {
                 let err = GetLastError();
-                return Err(anyhow!("无法删除符号链接: {}, 错误代码: {}", path.display(), err));
+                return Err(anyhow!(
+                    "无法删除符号链接: {}, 错误代码: {}",
+                    path.display(),
+                    err
+                ));
             }
         } else if (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0 {
             // 对于目录，递归删除内容
             match remove_directory_recursive(&long_path) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     let err = GetLastError();
-                    return Err(anyhow!("递归删除目录内容失败: {}, 原始错误: {}, Windows错误代码: {}", path.display(), e, err));
+                    return Err(anyhow!(
+                        "递归删除目录内容失败: {}, 原始错误: {}, Windows错误代码: {}",
+                        path.display(),
+                        e,
+                        err
+                    ));
                 }
             }
 
@@ -252,7 +282,11 @@ fn remove_dir_all_with_symlinks(path: &Path) -> Result<()> {
             // 删除空目录
             if RemoveDirectoryW(path_wide.as_ptr()) == 0 {
                 let err = GetLastError();
-                return Err(anyhow!("无法删除目录: {}, Windows错误代码: {}", path.display(), err));
+                return Err(anyhow!(
+                    "无法删除目录: {}, Windows错误代码: {}",
+                    path.display(),
+                    err
+                ));
             }
         } else {
             // 移除文件的只读属性
@@ -261,7 +295,11 @@ fn remove_dir_all_with_symlinks(path: &Path) -> Result<()> {
             // 对于文件，使用 DeleteFileW
             if DeleteFileW(path_wide.as_ptr()) == 0 {
                 let err = GetLastError();
-                return Err(anyhow!("无法删除文件: {}, Windows错误代码: {}", path.display(), err));
+                return Err(anyhow!(
+                    "无法删除文件: {}, Windows错误代码: {}",
+                    path.display(),
+                    err
+                ));
             }
         }
     }
@@ -274,9 +312,9 @@ fn remove_dir_all_with_symlinks(path: &Path) -> Result<()> {
 unsafe fn remove_directory_recursive(path: &Path) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::{
-        DeleteFileW, FindFirstFileW, FindNextFileW, FindClose, RemoveDirectoryW,
-        FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, WIN32_FIND_DATAW,
-        SetFileAttributesW, FILE_ATTRIBUTE_READONLY,
+        DeleteFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_READONLY,
+        FILE_ATTRIBUTE_REPARSE_POINT, FindClose, FindFirstFileW, FindNextFileW, RemoveDirectoryW,
+        SetFileAttributesW, WIN32_FIND_DATAW,
     };
 
     // 构建搜索模式：路径\*
@@ -298,13 +336,11 @@ unsafe fn remove_directory_recursive(path: &Path) -> Result<()> {
 
     loop {
         // 跳过 . 和 ..
-        let name = Vec::from(
-            find_data.cFileName[..]
-                .iter()
-                .take_while(|&&c| c != 0)
-                .copied()
-                .collect::<Vec<_>>(),
-        );
+        let name = find_data.cFileName[..]
+            .iter()
+            .take_while(|&&c| c != 0)
+            .copied()
+            .collect::<Vec<_>>();
         let name_str = String::from_utf16_lossy(&name);
 
         if name_str != "." && name_str != ".." {
@@ -322,20 +358,36 @@ unsafe fn remove_directory_recursive(path: &Path) -> Result<()> {
 
             if is_dir && !is_reparse_point {
                 // 递归删除子目录
-                unsafe { remove_directory_recursive(&item_path)?; }
+                unsafe {
+                    remove_directory_recursive(&item_path)?;
+                }
                 // 移除只读属性
-                unsafe { SetFileAttributesW(item_wide.as_ptr(), find_data.dwFileAttributes & !FILE_ATTRIBUTE_READONLY); }
+                unsafe {
+                    SetFileAttributesW(
+                        item_wide.as_ptr(),
+                        find_data.dwFileAttributes & !FILE_ATTRIBUTE_READONLY,
+                    );
+                }
                 // 删除空目录
                 if unsafe { RemoveDirectoryW(item_wide.as_ptr()) } == 0 {
-                    unsafe { FindClose(find_handle); }
+                    unsafe {
+                        FindClose(find_handle);
+                    }
                     return Err(anyhow!("无法删除目录: {}", item_path.display()));
                 }
             } else {
                 // 移除只读属性
-                unsafe { SetFileAttributesW(item_wide.as_ptr(), find_data.dwFileAttributes & !FILE_ATTRIBUTE_READONLY); }
+                unsafe {
+                    SetFileAttributesW(
+                        item_wide.as_ptr(),
+                        find_data.dwFileAttributes & !FILE_ATTRIBUTE_READONLY,
+                    );
+                }
                 // 删除文件或符号链接
                 if unsafe { DeleteFileW(item_wide.as_ptr()) } == 0 {
-                    unsafe { FindClose(find_handle); }
+                    unsafe {
+                        FindClose(find_handle);
+                    }
                     return Err(anyhow!("无法删除文件: {}", item_path.display()));
                 }
             }
@@ -346,7 +398,9 @@ unsafe fn remove_directory_recursive(path: &Path) -> Result<()> {
         }
     }
 
-    unsafe { FindClose(find_handle); }
+    unsafe {
+        FindClose(find_handle);
+    }
     Ok(())
 }
 
@@ -378,9 +432,9 @@ fn to_long_path(path: &Path) -> Result<PathBuf> {
     }
 
     // 添加 \\?\ 前缀
-    let long_path = if path_str.starts_with(r"\\") {
+    let long_path = if let Some(stripped) = path_str.strip_prefix(r"\\") {
         // UNC 路径：\\?\UNC\server\share
-        PathBuf::from(format!(r"\\?\UNC\{}", &path_str[2..]))
+        PathBuf::from(format!(r"\\?\UNC\{}", stripped))
     } else {
         // 普通路径：\\?\C:\path
         PathBuf::from(format!(r"\\?{}", path_str))

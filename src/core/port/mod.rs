@@ -12,6 +12,23 @@ pub struct ProcessInfo {
     pub memory: u64,
 }
 
+impl ProcessInfo {
+    /// 从 sysinfo::Process 创建 ProcessInfo
+    fn from_sysinfo(pid: u32, process: &sysinfo::Process) -> Self {
+        ProcessInfo {
+            pid,
+            name: process.name().to_string_lossy().to_string(),
+            cmd: process
+                .cmd()
+                .iter()
+                .map(|s| s.to_string_lossy().to_string())
+                .collect(),
+            cpu_usage: process.cpu_usage(),
+            memory: process.memory(),
+        }
+    }
+}
+
 /// 端口占用信息
 #[derive(Debug, Clone)]
 pub struct PortInfo {
@@ -33,17 +50,7 @@ pub fn find_processes_by_ports(ports: &[u16]) -> Result<Vec<PortInfo>> {
         if let Some(&pid) = connections.get(&port)
             && let Some(process) = sys.process(sysinfo::Pid::from_u32(pid))
         {
-            let process_info = ProcessInfo {
-                pid,
-                name: process.name().to_string_lossy().to_string(),
-                cmd: process
-                    .cmd()
-                    .iter()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .collect(),
-                cpu_usage: process.cpu_usage(),
-                memory: process.memory(),
-            };
+            let process_info = ProcessInfo::from_sysinfo(pid, process);
             result.push(PortInfo {
                 port,
                 process: process_info,
@@ -66,17 +73,7 @@ pub fn list_all_ports() -> Result<Vec<PortInfo>> {
 
     for (port, pid) in connections {
         if let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) {
-            let process_info = ProcessInfo {
-                pid,
-                name: process.name().to_string_lossy().to_string(),
-                cmd: process
-                    .cmd()
-                    .iter()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .collect(),
-                cpu_usage: process.cpu_usage(),
-                memory: process.memory(),
-            };
+            let process_info = ProcessInfo::from_sysinfo(pid, process);
             result.push(PortInfo {
                 port,
                 process: process_info,

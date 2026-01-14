@@ -189,13 +189,13 @@ fn is_modern_terminal() -> bool {
 }
 
 /// 检测是否为 PowerShell Core (6+)
-fn is_powershell_core() -> bool {
+pub fn is_powershell_core() -> bool {
     // PowerShell Core 会在 PSVersionTable 中设置版本
     env::var("PSVersionTable").map(|_| true).unwrap_or(false)
 }
 
 /// 检测是否为 Windows PowerShell (5.1 及以下)
-fn is_windows_powershell_legacy() -> bool {
+pub fn is_windows_powershell_legacy() -> bool {
     // Windows PowerShell 5.1 特有环境变量检测
     env::var("PSModulePath").is_ok()
         && env::var("PSVersionTable").is_err()
@@ -203,7 +203,7 @@ fn is_windows_powershell_legacy() -> bool {
 }
 
 /// 检测是否在 Windows Terminal 或 ConEmu 中运行
-fn is_windows_terminal_or_conemu() -> bool {
+pub fn is_windows_terminal_or_conemu() -> bool {
     // Windows Terminal - 最可靠的检测
     if env::var("WT_SESSION").is_ok() {
         return true;

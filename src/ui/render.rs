@@ -431,8 +431,10 @@ pub fn confirm_deletion(files: &[FileInfo], skip_confirm: bool, dry_run: bool) -
 }
 
 /// 检查文件占用并处理
+///
 /// - 默认：显示占用信息，询问用户是否继续
-/// --anyway：自动终止占用进程，然后继续
+/// - `--anyway`：自动终止占用进程，然后继续
+///
 /// 返回 true 表示继续删除，false 表示取消操作
 pub fn check_and_warn_file_locks(files: &[FileInfo], anyway: bool) -> Result<bool> {
     use crate::core::process::{inspect_file_locks, kill_processes_force};

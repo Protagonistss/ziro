@@ -3,6 +3,14 @@ use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Windows 删除重试参数
+#[cfg(target_os = "windows")]
+const RETRY_MAX_ATTEMPTS: u32 = 5;
+#[cfg(target_os = "windows")]
+const RETRY_INITIAL_WAIT_MS: u64 = 100;
+#[cfg(target_os = "windows")]
+const RETRY_MAX_WAIT_MS: u64 = 1000;
+
 #[derive(Debug, Clone)]
 pub struct FileInfo {
     pub path: PathBuf,
@@ -144,14 +152,11 @@ fn try_windows_bulk_remove(
     // 尝试直接使用 remove_dir_all 删除整个目录树，带重试
     use crate::core::process::{find_processes_by_file, kill_process_force};
 
-    const MAX_BULK_RETRIES: u32 = 5;
-    const INITIAL_WAIT_MS: u64 = 100;
-    const MAX_WAIT_MS: u64 = 1000;
-    let mut wait_ms = INITIAL_WAIT_MS;
+    let mut wait_ms = RETRY_INITIAL_WAIT_MS;
     let mut last_err = None;
     let mut success = false;
 
-    for attempt in 0..=MAX_BULK_RETRIES {
+    for attempt in 0..=RETRY_MAX_ATTEMPTS {
         match remove_dir_all_with_symlinks(&root_dir.path) {
             Ok(_) => {
                 success = true;
@@ -163,7 +168,7 @@ fn try_windows_bulk_remove(
                 let io_err = last_err.as_ref().and_then(|e| e.downcast_ref::<std::io::Error>());
                 let should_retry = io_err.map_or(false, |e| is_retryable_error(e));
 
-                if !should_retry || attempt == MAX_BULK_RETRIES {
+                if !should_retry || attempt == RETRY_MAX_ATTEMPTS {
                     break;
                 }
 
@@ -174,7 +179,7 @@ fn try_windows_bulk_remove(
                 }
 
                 std::thread::sleep(std::time::Duration::from_millis(wait_ms));
-                wait_ms = (wait_ms * 2).min(MAX_WAIT_MS);
+                wait_ms = (wait_ms * 2).min(RETRY_MAX_WAIT_MS);
             }
         }
     }
@@ -291,26 +296,13 @@ fn remove_dir_all_with_symlinks(path: &Path) -> Result<()> {
             // 对于符号链接，使用 DeleteFileW
             if DeleteFileW(path_wide.as_ptr()) == 0 {
                 let err = GetLastError();
-                return Err(anyhow!(
-                    "无法删除符号链接: {}, 错误代码: {}",
-                    path.display(),
-                    err
-                ));
+                return Err(std::io::Error::from_raw_os_error(err as i32))
+                    .with_context(|| format!("无法删除符号链接: {}", path.display()));
             }
         } else if (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0 {
             // 对于目录，递归删除内容
-            match remove_directory_recursive(&long_path) {
-                Ok(_) => {}
-                Err(e) => {
-                    let err = GetLastError();
-                    return Err(anyhow!(
-                        "递归删除目录内容失败: {}, 原始错误: {}, Windows错误代码: {}",
-                        path.display(),
-                        e,
-                        err
-                    ));
-                }
-            }
+            remove_directory_recursive(&long_path)
+                .with_context(|| format!("递归删除目录内容失败: {}", path.display()))?;
 
             // 移除根目录的只读属性
             SetFileAttributesW(path_wide.as_ptr(), attrs & !FILE_ATTRIBUTE_READONLY);
@@ -318,11 +310,8 @@ fn remove_dir_all_with_symlinks(path: &Path) -> Result<()> {
             // 删除空目录
             if RemoveDirectoryW(path_wide.as_ptr()) == 0 {
                 let err = GetLastError();
-                return Err(anyhow!(
-                    "无法删除目录: {}, Windows错误代码: {}",
-                    path.display(),
-                    err
-                ));
+                return Err(std::io::Error::from_raw_os_error(err as i32))
+                    .with_context(|| format!("无法删除目录: {}", path.display()));
             }
         } else {
             // 移除文件的只读属性
@@ -331,11 +320,8 @@ fn remove_dir_all_with_symlinks(path: &Path) -> Result<()> {
             // 对于文件，使用 DeleteFileW
             if DeleteFileW(path_wide.as_ptr()) == 0 {
                 let err = GetLastError();
-                return Err(anyhow!(
-                    "无法删除文件: {}, Windows错误代码: {}",
-                    path.display(),
-                    err
-                ));
+                return Err(std::io::Error::from_raw_os_error(err as i32))
+                    .with_context(|| format!("无法删除文件: {}", path.display()));
             }
         }
     }
@@ -406,10 +392,12 @@ unsafe fn remove_directory_recursive(path: &Path) -> Result<()> {
                 }
                 // 删除空目录
                 if unsafe { RemoveDirectoryW(item_wide.as_ptr()) } == 0 {
+                    let err = unsafe { windows_sys::Win32::Foundation::GetLastError() };
                     unsafe {
                         FindClose(find_handle);
                     }
-                    return Err(anyhow!("无法删除目录: {}", item_path.display()));
+                    return Err(std::io::Error::from_raw_os_error(err as i32))
+                        .with_context(|| format!("无法删除目录: {}", item_path.display()));
                 }
             } else {
                 // 移除只读属性
@@ -421,10 +409,12 @@ unsafe fn remove_directory_recursive(path: &Path) -> Result<()> {
                 }
                 // 删除文件或符号链接
                 if unsafe { DeleteFileW(item_wide.as_ptr()) } == 0 {
+                    let err = unsafe { windows_sys::Win32::Foundation::GetLastError() };
                     unsafe {
                         FindClose(find_handle);
                     }
-                    return Err(anyhow!("无法删除文件: {}", item_path.display()));
+                    return Err(std::io::Error::from_raw_os_error(err as i32))
+                        .with_context(|| format!("无法删除文件: {}", item_path.display()));
                 }
             }
         }
@@ -542,20 +532,16 @@ fn remove_with_retry(file: &FileInfo) -> Result<()> {
     use std::thread;
     use std::time::Duration;
 
-    const MAX_RETRIES: u32 = 5;
-    const INITIAL_WAIT_MS: u64 = 100;
-    const MAX_WAIT_MS: u64 = 1000;
+    let mut wait_ms = RETRY_INITIAL_WAIT_MS;
 
-    let mut wait_ms = INITIAL_WAIT_MS;
-
-    for attempt in 0..=MAX_RETRIES {
+    for attempt in 0..=RETRY_MAX_ATTEMPTS {
         match remove_entry(file) {
             Ok(()) => return Ok(()),
             Err(err) => {
                 let io_err = err.downcast_ref::<std::io::Error>();
                 let should_retry = io_err.map_or(false, |e| is_retryable_error(e));
 
-                if !should_retry || attempt == MAX_RETRIES {
+                if !should_retry || attempt == RETRY_MAX_ATTEMPTS {
                     return Err(err.context(format!(
                         "删除失败（重试 {} 次后）: {}",
                         attempt, file.path.display()
@@ -571,7 +557,7 @@ fn remove_with_retry(file: &FileInfo) -> Result<()> {
 
                 // 指数退避等待
                 thread::sleep(Duration::from_millis(wait_ms));
-                wait_ms = (wait_ms * 2).min(MAX_WAIT_MS);
+                wait_ms = (wait_ms * 2).min(RETRY_MAX_WAIT_MS);
             }
         }
     }

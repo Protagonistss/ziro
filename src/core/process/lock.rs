@@ -369,7 +369,7 @@ fn find_processes_with_handle(path_str: &str) -> Result<Vec<u32>> {
 fn find_processes_with_powershell(path_str: &str) -> Result<Vec<u32>> {
     let mut pids = Vec::new();
 
-    // 使用更全面的PowerShell命令
+    // 使用PowerShell命令查找进程
     let powershell_commands = vec![
         // 方法1：查找进程模块
         format!(
@@ -379,11 +379,6 @@ fn find_processes_with_powershell(path_str: &str) -> Result<Vec<u32>> {
         // 方法2：查找进程句柄
         format!(
             "$path = '{}'; Get-Process | ForEach-Object {{ if ($_.Modules.FileName -contains $path) {{ $_.Id }} }}",
-            path_str
-        ),
-        // 方法3：使用 wmic 通过 PowerShell
-        format!(
-            "wmic process where 'ExecutablePath like \"%{}%\"' get ProcessId /format:list",
             path_str
         ),
     ];

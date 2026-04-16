@@ -141,29 +141,65 @@ fn try_windows_bulk_remove(
         return Some(vec![(root_dir.path.clone(), Ok(()))]);
     }
 
-    // 尝试直接使用 remove_dir_all 删除整个目录树
-    match remove_dir_all_with_symlinks(&root_dir.path) {
-        Ok(_) => {
-            if verbose {
-                println!(
-                    "{} {}",
-                    theme.icon_success(),
-                    theme.muted(format!("删除 {}", root_dir.path.display()))
-                );
+    // 尝试直接使用 remove_dir_all 删除整个目录树，带重试
+    use crate::core::process::{find_processes_by_file, kill_process_force};
+
+    const MAX_BULK_RETRIES: u32 = 5;
+    const INITIAL_WAIT_MS: u64 = 100;
+    const MAX_WAIT_MS: u64 = 1000;
+    let mut wait_ms = INITIAL_WAIT_MS;
+    let mut last_err = None;
+    let mut success = false;
+
+    for attempt in 0..=MAX_BULK_RETRIES {
+        match remove_dir_all_with_symlinks(&root_dir.path) {
+            Ok(_) => {
+                success = true;
+                break;
             }
-            Some(vec![(root_dir.path.clone(), Ok(()))])
-        }
-        Err(e) => {
-            if verbose {
-                println!(
-                    "{} {}",
-                    theme.icon_warning(),
-                    theme.warning(format!("批量删除失败，尝试逐个删除: {}", e))
-                );
+            Err(e) => {
+                last_err = Some(e);
+
+                let io_err = last_err.as_ref().and_then(|e| e.downcast_ref::<std::io::Error>());
+                let should_retry = io_err.map_or(false, |e| is_retryable_error(e));
+
+                if !should_retry || attempt == MAX_BULK_RETRIES {
+                    break;
+                }
+
+                if let Ok(pids) = find_processes_by_file(&root_dir.path) {
+                    for pid in pids {
+                        let _ = kill_process_force(pid);
+                    }
+                }
+
+                std::thread::sleep(std::time::Duration::from_millis(wait_ms));
+                wait_ms = (wait_ms * 2).min(MAX_WAIT_MS);
             }
-            // 批量删除失败，返回 None 让调用者使用逐个删除
-            None
         }
+    }
+
+    if success {
+        if verbose {
+            println!(
+                "{} {}",
+                theme.icon_success(),
+                theme.muted(format!("删除 {}", root_dir.path.display()))
+            );
+        }
+        Some(vec![(root_dir.path.clone(), Ok(()))])
+    } else {
+        if verbose {
+            println!(
+                "{} {}",
+                theme.icon_warning(),
+                theme.warning(format!(
+                    "批量删除失败，尝试逐个删除: {}",
+                    last_err.unwrap_or_else(|| anyhow::anyhow!("未知错误"))
+                ))
+            );
+        }
+        None
     }
 }
 
@@ -194,7 +230,7 @@ fn remove_files_individually(
         let result = if dry_run {
             Ok(())
         } else {
-            remove_entry(&file).with_context(|| format!("删除失败: {}", file.path.display()))
+            remove_with_retry(&file)
         };
 
         if verbose {
@@ -470,6 +506,85 @@ fn remove_readonly_recursively(path: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// 判断 IO 错误是否可重试（Windows 特定）
+/// 仅以下情况触发重试：
+/// - PermissionDenied
+/// - Windows 错误码 32 (ERROR_SHARING_VIOLATION)
+/// - Windows 错误码 33 (ERROR_LOCK_VIOLATION)
+/// - Windows 错误码 5 (ERROR_ACCESS_DENIED)
+#[cfg(target_os = "windows")]
+fn is_retryable_error(e: &std::io::Error) -> bool {
+    match e.kind() {
+        std::io::ErrorKind::PermissionDenied => true,
+        _ => {
+            let os_code = e.raw_os_error();
+            matches!(os_code, Some(5) | Some(32) | Some(33))
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_retryable_error(_e: &std::io::Error) -> bool {
+    false
+}
+
+/// 带指数退避重试的文件删除
+/// 参数：
+/// - 最大重试次数：5
+/// - 初始等待：100ms
+/// - 指数因子：2（等待序列 100ms, 200ms, 400ms, 800ms, 1000ms）
+/// - 最大单次等待：1000ms
+#[cfg(target_os = "windows")]
+fn remove_with_retry(file: &FileInfo) -> Result<()> {
+    use crate::core::process::{find_processes_by_file, kill_process_force};
+    use std::thread;
+    use std::time::Duration;
+
+    const MAX_RETRIES: u32 = 5;
+    const INITIAL_WAIT_MS: u64 = 100;
+    const MAX_WAIT_MS: u64 = 1000;
+
+    let mut wait_ms = INITIAL_WAIT_MS;
+
+    for attempt in 0..=MAX_RETRIES {
+        match remove_entry(file) {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                let io_err = err.downcast_ref::<std::io::Error>();
+                let should_retry = io_err.map_or(false, |e| is_retryable_error(e));
+
+                if !should_retry || attempt == MAX_RETRIES {
+                    return Err(err.context(format!(
+                        "删除失败（重试 {} 次后）: {}",
+                        attempt, file.path.display()
+                    )));
+                }
+
+                // 重试前：重新检测占用进程并尝试终止
+                if let Ok(pids) = find_processes_by_file(&file.path) {
+                    for pid in pids {
+                        let _ = kill_process_force(pid);
+                    }
+                }
+
+                // 指数退避等待
+                thread::sleep(Duration::from_millis(wait_ms));
+                wait_ms = (wait_ms * 2).min(MAX_WAIT_MS);
+            }
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "删除失败（重试耗尽）: {}",
+        file.path.display()
+    ))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn remove_with_retry(file: &FileInfo) -> Result<()> {
+    remove_entry(file)
 }
 
 fn remove_entry(file: &FileInfo) -> Result<()> {

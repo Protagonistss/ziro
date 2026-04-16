@@ -166,6 +166,106 @@ fn check_file_locking_status(_path: &Path) -> bool {
     true
 }
 
+/// Windows特定：使用 RestartManager API 查找占用文件的进程
+/// 这是 Windows 资源管理器使用的同一套 API，能精确检测文件句柄占用
+#[cfg(target_os = "windows")]
+fn find_processes_with_restart_manager(path: &Path) -> Result<Vec<u32>> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::System::RestartManager::*;
+
+    let mut pids = Vec::new();
+
+    let wide_path: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let mut session_handle: u32 = 0;
+    let mut session_key: [u16; 1] = [0];
+
+    let result = unsafe {
+        RmStartSession(&mut session_handle, 0, session_key.as_mut_ptr())
+    };
+
+    if result != 0 {
+        return Ok(pids);
+    }
+
+    // RAII guard to ensure session cleanup
+    struct RmSession { handle: u32 }
+    impl Drop for RmSession {
+        fn drop(&mut self) {
+            unsafe { RmEndSession(self.handle); }
+        }
+    }
+    let _session = RmSession { handle: session_handle };
+
+    let result = unsafe {
+        RmRegisterResources(
+            session_handle,
+            1,
+            &wide_path.as_ptr(),
+            0,
+            std::ptr::null(),
+            0,
+            std::ptr::null(),
+        )
+    };
+
+    if result != 0 {
+        return Ok(pids);
+    }
+
+    let mut proc_info_needed: u32 = 0;
+    let mut proc_info_count: u32 = 0;
+    let mut reboot_reasons: u32 = 0;
+
+    let result = unsafe {
+        RmGetList(
+            session_handle,
+            &mut proc_info_needed,
+            &mut proc_info_count,
+            std::ptr::null_mut(),
+            &mut reboot_reasons,
+        )
+    };
+
+    if result != 233 && result != 0 {
+        return Ok(pids);
+    }
+
+    if proc_info_needed == 0 {
+        return Ok(pids);
+    }
+
+    let mut process_info: Vec<RM_PROCESS_INFO> = vec![unsafe { std::mem::zeroed() }; proc_info_needed as usize];
+    proc_info_count = proc_info_needed;
+
+    let result = unsafe {
+        RmGetList(
+            session_handle,
+            &mut proc_info_needed,
+            &mut proc_info_count,
+            process_info.as_mut_ptr(),
+            &mut reboot_reasons,
+        )
+    };
+
+    if result != 0 {
+        return Ok(pids);
+    }
+
+    for i in 0..proc_info_count as usize {
+        let pid = process_info[i].Process.dwProcessId;
+        if pid != 0 && !pids.contains(&pid) {
+            pids.push(pid);
+        }
+    }
+
+    Ok(pids)
+}
+
 /// 查找占用指定文件的进程
 pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
     let mut pids = Vec::new();
@@ -175,26 +275,25 @@ pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
     }
 
     if cfg!(target_os = "windows") {
-        // Windows 系统的实现 - 使用多种方法查找占用进程
         let path_str = path.to_string_lossy();
 
-        // 方法1：使用 handle.exe 工具（如果有）
-        if let Ok(handle_pids) = find_processes_with_handle(&path_str) {
-            pids.extend(handle_pids);
+        // 方法1（优先）：使用 RestartManager API 精确检测文件句柄占用
+        if let Ok(rm_pids) = find_processes_with_restart_manager(path) {
+            pids.extend(rm_pids);
         }
 
-        // 方法2：使用 PowerShell 查找占用文件的进程（更全面的方法）
-        if let Ok(ps_pids) = find_processes_with_powershell(&path_str) {
-            for pid in ps_pids {
+        // 方法2：使用 handle.exe 工具（如果有）
+        if let Ok(handle_pids) = find_processes_with_handle(&path_str) {
+            for pid in handle_pids {
                 if !pids.contains(&pid) {
                     pids.push(pid);
                 }
             }
         }
 
-        // 方法3：使用 wmic 命令查找
-        if let Ok(wmic_pids) = find_processes_with_wmic(&path_str) {
-            for pid in wmic_pids {
+        // 方法3：使用 PowerShell 查找（兼容兜底）
+        if let Ok(ps_pids) = find_processes_with_powershell(&path_str) {
+            for pid in ps_pids {
                 if !pids.contains(&pid) {
                     pids.push(pid);
                 }
@@ -319,43 +418,6 @@ fn find_processes_with_powershell(path_str: &str) -> Result<Vec<u32>> {
     Ok(pids)
 }
 
-/// Windows特定：使用 wmic 查找占用进程
-#[cfg(target_os = "windows")]
-fn find_processes_with_wmic(path_str: &str) -> Result<Vec<u32>> {
-    let mut pids = Vec::new();
-
-    match std::process::Command::new("wmic")
-        .args([
-            "process",
-            "where",
-            &format!("ExecutablePath like '%{path_str}%'"),
-            "get",
-            "ProcessId",
-            "/format:list",
-        ])
-        .output()
-    {
-        Ok(output) => {
-            if output.status.success() {
-                let output_str = safe_command_output_to_string(&output.stdout);
-                for line in output_str.lines() {
-                    if line.starts_with("ProcessId=") {
-                        let pid_part = line.trim_start_matches("ProcessId=");
-                        if let Ok(pid) = pid_part.trim().parse::<u32>() {
-                            pids.push(pid);
-                        }
-                    }
-                }
-            }
-        }
-        Err(_) => {
-            // wmic 命令失败
-        }
-    }
-
-    Ok(pids)
-}
-
 /// 非Windows系统的空实现
 #[cfg(not(target_os = "windows"))]
 fn find_processes_with_handle(_path_str: &str) -> Result<Vec<u32>> {
@@ -365,11 +427,5 @@ fn find_processes_with_handle(_path_str: &str) -> Result<Vec<u32>> {
 /// 非Windows系统的空实现
 #[cfg(not(target_os = "windows"))]
 fn find_processes_with_powershell(_path_str: &str) -> Result<Vec<u32>> {
-    Ok(vec![])
-}
-
-/// 非Windows系统的空实现
-#[cfg(not(target_os = "windows"))]
-fn find_processes_with_wmic(_path_str: &str) -> Result<Vec<u32>> {
     Ok(vec![])
 }

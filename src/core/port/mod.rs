@@ -264,5 +264,7 @@ fn parse_lsof_output(stdout: &[u8]) -> Result<HashMap<u16, u32>> {
 
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 fn get_network_connections() -> Result<HashMap<u16, u32>> {
-    Err(anyhow::Error::msg("Network connection queries are not supported on the current operating system"))
+    Err(anyhow::Error::msg(
+        "Network connection queries are not supported on the current operating system",
+    ))
 }

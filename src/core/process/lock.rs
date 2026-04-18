@@ -53,7 +53,11 @@ fn is_file_locked_windows(path: &Path) -> bool {
             ErrorKind::PermissionDenied => check_file_locking_status(path),
             ErrorKind::NotFound => false,
             _ => {
-                eprintln!("Warning: file open failed, may be in use: {} - {}", path.display(), e);
+                eprintln!(
+                    "Warning: file open failed, may be in use: {} - {}",
+                    path.display(),
+                    e
+                );
                 true
             }
         },
@@ -105,18 +109,19 @@ fn is_directory_locked(path: &Path) -> bool {
             }
             false
         }
-        Err(e) => {
-            match e.kind() {
-                std::io::ErrorKind::PermissionDenied => {
-                    eprintln!("Warning: directory access denied, may be locked: {}", path.display());
-                    true
-                }
-                _ => {
-                    eprintln!("Warning: directory read failed: {} - {}", path.display(), e);
-                    true
-                }
+        Err(e) => match e.kind() {
+            std::io::ErrorKind::PermissionDenied => {
+                eprintln!(
+                    "Warning: directory access denied, may be locked: {}",
+                    path.display()
+                );
+                true
             }
-        }
+            _ => {
+                eprintln!("Warning: directory read failed: {} - {}", path.display(), e);
+                true
+            }
+        },
     }
 }
 
@@ -127,7 +132,10 @@ fn is_directory_locked(path: &Path) -> bool {
         Ok(_) => false,
         Err(e) => match e.kind() {
             std::io::ErrorKind::PermissionDenied => {
-                eprintln!("Warning: directory access denied, may be locked: {}", path.display());
+                eprintln!(
+                    "Warning: directory access denied, may be locked: {}",
+                    path.display()
+                );
                 true
             }
             _ => {
@@ -208,22 +216,26 @@ fn find_processes_with_restart_manager(path: &Path) -> Result<Vec<u32>> {
     let mut session_handle: u32 = 0;
     let mut session_key: [u16; 1] = [0];
 
-    let result = unsafe {
-        RmStartSession(&mut session_handle, 0, session_key.as_mut_ptr())
-    };
+    let result = unsafe { RmStartSession(&mut session_handle, 0, session_key.as_mut_ptr()) };
 
     if result != 0 {
         return Ok(pids);
     }
 
     // RAII guard to ensure session cleanup
-    struct RmSession { handle: u32 }
+    struct RmSession {
+        handle: u32,
+    }
     impl Drop for RmSession {
         fn drop(&mut self) {
-            unsafe { RmEndSession(self.handle); }
+            unsafe {
+                RmEndSession(self.handle);
+            }
         }
     }
-    let _session = RmSession { handle: session_handle };
+    let _session = RmSession {
+        handle: session_handle,
+    };
 
     let result = unsafe {
         RmRegisterResources(
@@ -263,7 +275,8 @@ fn find_processes_with_restart_manager(path: &Path) -> Result<Vec<u32>> {
         return Ok(pids);
     }
 
-    let mut process_info: Vec<RM_PROCESS_INFO> = vec![unsafe { std::mem::zeroed() }; proc_info_needed as usize];
+    let mut process_info: Vec<RM_PROCESS_INFO> =
+        vec![unsafe { std::mem::zeroed() }; proc_info_needed as usize];
     proc_info_count = proc_info_needed;
 
     let result = unsafe {

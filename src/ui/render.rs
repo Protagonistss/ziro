@@ -19,7 +19,10 @@ pub fn select_processes_to_kill(port_infos: Vec<PortInfo>) -> Result<Vec<PortInf
     let theme = Theme::new();
 
     if port_infos.is_empty() {
-        println!("{}", theme.warn("No processes found occupying the specified ports"));
+        println!(
+            "{}",
+            theme.warn("No processes found occupying the specified ports")
+        );
         return Ok(vec![]);
     }
 
@@ -123,7 +126,11 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
 
     let theme = Theme::new();
 
-    println!("{} {}", theme.icon_lightning(), theme.title("Port Query Results"));
+    println!(
+        "{} {}",
+        theme.icon_lightning(),
+        theme.title("Port Query Results")
+    );
     println!();
 
     // Build port to process info mapping
@@ -618,7 +625,11 @@ pub fn display_removal_results(
 pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Result<()>)]) {
     let theme = Theme::new();
 
-    println!("{} {}", theme.icon_fire(), theme.error_bold("Force Kill Processes"));
+    println!(
+        "{} {}",
+        theme.icon_fire(),
+        theme.error_bold("Force Kill Processes")
+    );
     println!();
 
     // Show target processes first

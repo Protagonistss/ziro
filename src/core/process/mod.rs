@@ -28,7 +28,9 @@ pub fn kill_process(pid: u32) -> Result<()> {
         if process.kill() {
             Ok(())
         } else {
-            Err(anyhow!("Failed to kill process {pid} (administrator privileges may be required)"))
+            Err(anyhow!(
+                "Failed to kill process {pid} (administrator privileges may be required)"
+            ))
         }
     } else {
         Err(anyhow!("Process {pid} does not exist"))
@@ -78,7 +80,9 @@ pub fn kill_process_force(pid: u32) -> Result<()> {
                 } else {
                     // If kill() returns false
                     if attempt == 3 {
-                        return Err(anyhow!("Failed to force kill process {pid} (administrator privileges may be required)"));
+                        return Err(anyhow!(
+                            "Failed to force kill process {pid} (administrator privileges may be required)"
+                        ));
                     }
                 }
             } else {
@@ -93,7 +97,9 @@ pub fn kill_process_force(pid: u32) -> Result<()> {
         }
     }
 
-    Err(anyhow!("Force kill of process {pid} failed, the process may still be running"))
+    Err(anyhow!(
+        "Force kill of process {pid} failed, the process may still be running"
+    ))
 }
 
 /// Force kill multiple processes

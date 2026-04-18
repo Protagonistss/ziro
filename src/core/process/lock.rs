@@ -53,7 +53,11 @@ fn is_file_locked_windows(path: &Path) -> bool {
             ErrorKind::PermissionDenied => check_file_locking_status(path),
             ErrorKind::NotFound => false,
             _ => {
-                eprintln!("Warning: file open failed, may be in use: {} - {}", path.display(), e);
+                eprintln!(
+                    "Warning: file open failed, may be in use: {} - {}",
+                    path.display(),
+                    e
+                );
                 true
             }
         },
@@ -105,18 +109,19 @@ fn is_directory_locked(path: &Path) -> bool {
             }
             false
         }
-        Err(e) => {
-            match e.kind() {
-                std::io::ErrorKind::PermissionDenied => {
-                    eprintln!("Warning: directory access denied, may be locked: {}", path.display());
-                    true
-                }
-                _ => {
-                    eprintln!("Warning: directory read failed: {} - {}", path.display(), e);
-                    true
-                }
+        Err(e) => match e.kind() {
+            std::io::ErrorKind::PermissionDenied => {
+                eprintln!(
+                    "Warning: directory access denied, may be locked: {}",
+                    path.display()
+                );
+                true
             }
-        }
+            _ => {
+                eprintln!("Warning: directory read failed: {} - {}", path.display(), e);
+                true
+            }
+        },
     }
 }
 
@@ -166,18 +171,6 @@ fn check_file_locking_status(path: &Path) -> bool {
     }
 }
 
-/// No-op implementation for non-Windows systems
-#[cfg(not(target_os = "windows"))]
-fn is_directory_locked(_path: &Path) -> bool {
-    false
-}
-
-/// No-op implementation for non-Windows systems
-#[cfg(not(target_os = "windows"))]
-fn check_file_locking_status(_path: &Path) -> bool {
-    true
-}
-
 /// Windows-specific: use RestartManager API to find processes holding a file
 /// This is the same API used by Windows Explorer, providing precise file handle detection
 #[cfg(target_os = "windows")]
@@ -196,22 +189,26 @@ fn find_processes_with_restart_manager(path: &Path) -> Result<Vec<u32>> {
     let mut session_handle: u32 = 0;
     let mut session_key: [u16; 1] = [0];
 
-    let result = unsafe {
-        RmStartSession(&mut session_handle, 0, session_key.as_mut_ptr())
-    };
+    let result = unsafe { RmStartSession(&mut session_handle, 0, session_key.as_mut_ptr()) };
 
     if result != 0 {
         return Ok(pids);
     }
 
     // RAII guard to ensure session cleanup
-    struct RmSession { handle: u32 }
+    struct RmSession {
+        handle: u32,
+    }
     impl Drop for RmSession {
         fn drop(&mut self) {
-            unsafe { RmEndSession(self.handle); }
+            unsafe {
+                RmEndSession(self.handle);
+            }
         }
     }
-    let _session = RmSession { handle: session_handle };
+    let _session = RmSession {
+        handle: session_handle,
+    };
 
     let result = unsafe {
         RmRegisterResources(
@@ -251,7 +248,8 @@ fn find_processes_with_restart_manager(path: &Path) -> Result<Vec<u32>> {
         return Ok(pids);
     }
 
-    let mut process_info: Vec<RM_PROCESS_INFO> = vec![unsafe { std::mem::zeroed() }; proc_info_needed as usize];
+    let mut process_info: Vec<RM_PROCESS_INFO> =
+        vec![unsafe { std::mem::zeroed() }; proc_info_needed as usize];
     proc_info_count = proc_info_needed;
 
     let result = unsafe {
@@ -279,6 +277,7 @@ fn find_processes_with_restart_manager(path: &Path) -> Result<Vec<u32>> {
 }
 
 /// Find processes locking a specified file
+#[cfg(target_os = "windows")]
 pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
     let mut pids = Vec::new();
 
@@ -286,55 +285,59 @@ pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
         return Ok(pids);
     }
 
-    if cfg!(target_os = "windows") {
-        let path_str = path.to_string_lossy();
+    let path_str = path.to_string_lossy();
 
-        // Method 1 (preferred): use RestartManager API for precise file handle detection
-        if let Ok(rm_pids) = find_processes_with_restart_manager(path) {
-            pids.extend(rm_pids);
+    // Method 1 (preferred): use RestartManager API for precise file handle detection
+    if let Ok(rm_pids) = find_processes_with_restart_manager(path) {
+        pids.extend(rm_pids);
+    }
+
+    // Method 2: use handle.exe tool (if available)
+    if let Ok(handle_pids) = find_processes_with_handle(&path_str) {
+        for pid in handle_pids {
+            if !pids.contains(&pid) {
+                pids.push(pid);
+            }
         }
+    }
 
-        // Method 2: use handle.exe tool (if available)
-        if let Ok(handle_pids) = find_processes_with_handle(&path_str) {
-            for pid in handle_pids {
-                if !pids.contains(&pid) {
+    // Method 3: use PowerShell to find (compatibility fallback)
+    if let Ok(ps_pids) = find_processes_with_powershell(&path_str) {
+        for pid in ps_pids {
+            if !pids.contains(&pid) {
+                pids.push(pid);
+            }
+        }
+    }
+
+    Ok(pids)
+}
+
+/// Find processes locking a specified file
+#[cfg(not(target_os = "windows"))]
+pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
+    let mut pids = Vec::new();
+
+    if !path.exists() {
+        return Ok(pids);
+    }
+
+    let path_str = match path.to_str() {
+        Some(s) => s,
+        None => return Ok(pids),
+    };
+
+    if let Ok(output) = std::process::Command::new("lsof")
+        .arg("-t")
+        .arg(path_str)
+        .output()
+    {
+        if output.status.success() {
+            let output_str = safe_command_output_to_string(&output.stdout);
+            for line in output_str.lines() {
+                if let Ok(pid) = line.trim().parse::<u32>() {
                     pids.push(pid);
                 }
-            }
-        }
-
-        // Method 3: use PowerShell to find (compatibility fallback)
-        if let Ok(ps_pids) = find_processes_with_powershell(&path_str) {
-            for pid in ps_pids {
-                if !pids.contains(&pid) {
-                    pids.push(pid);
-                }
-            }
-        }
-    } else {
-        // Unix implementation
-        let path_str = match path.to_str() {
-            Some(s) => s,
-            None => return Ok(pids),
-        };
-
-        match std::process::Command::new("lsof")
-            .arg("-t")
-            .arg(path_str)
-            .output()
-        {
-            Ok(output) => {
-                if output.status.success() {
-                    let output_str = safe_command_output_to_string(&output.stdout);
-                    for line in output_str.lines() {
-                        if let Ok(pid) = line.trim().parse::<u32>() {
-                            pids.push(pid);
-                        }
-                    }
-                }
-            }
-            Err(_) => {
-                // lsof command not available
             }
         }
     }
@@ -422,16 +425,4 @@ fn find_processes_with_powershell(path_str: &str) -> Result<Vec<u32>> {
     }
 
     Ok(pids)
-}
-
-/// No-op implementation for non-Windows systems
-#[cfg(not(target_os = "windows"))]
-fn find_processes_with_handle(_path_str: &str) -> Result<Vec<u32>> {
-    Ok(vec![])
-}
-
-/// No-op implementation for non-Windows systems
-#[cfg(not(target_os = "windows"))]
-fn find_processes_with_powershell(_path_str: &str) -> Result<Vec<u32>> {
-    Ok(vec![])
 }

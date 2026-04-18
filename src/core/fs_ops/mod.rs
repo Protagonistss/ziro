@@ -79,9 +79,11 @@ pub fn collect_files_to_remove(paths: &[PathBuf], recursive: bool) -> Result<Vec
 
 /// Recursively collect directory contents (does not follow symlinks)
 fn collect_dir_files(dir: &Path, files: &mut Vec<FileInfo>) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("Failed to read directory: {}", dir.display()))?
+    for entry in
+        fs::read_dir(dir).with_context(|| format!("Failed to read directory: {}", dir.display()))?
     {
-        let entry = entry.with_context(|| format!("Failed to read directory entry: {}", dir.display()))?;
+        let entry =
+            entry.with_context(|| format!("Failed to read directory entry: {}", dir.display()))?;
         let path = entry.path();
         let metadata = path
             .symlink_metadata()
@@ -166,7 +168,9 @@ fn try_windows_bulk_remove(
             Err(e) => {
                 last_err = Some(e);
 
-                let io_err = last_err.as_ref().and_then(|e| e.downcast_ref::<std::io::Error>());
+                let io_err = last_err
+                    .as_ref()
+                    .and_then(|e| e.downcast_ref::<std::io::Error>());
                 let should_retry = io_err.is_some_and(is_retryable_error);
 
                 if !should_retry || attempt == RETRY_MAX_ATTEMPTS {
@@ -187,7 +191,8 @@ fn try_windows_bulk_remove(
                         theme.icon_warning(),
                         theme.muted(format!(
                             "Retrying ({}/{})...",
-                            attempt + 1, RETRY_MAX_ATTEMPTS
+                            attempt + 1,
+                            RETRY_MAX_ATTEMPTS
                         ))
                     );
                 }
@@ -316,8 +321,12 @@ fn remove_dir_all_with_symlinks(path: &Path) -> Result<()> {
             }
         } else if (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0 {
             // For directories, recursively delete contents
-            remove_directory_recursive(&long_path)
-                .with_context(|| format!("Failed to recursively delete directory contents: {}", path.display()))?;
+            remove_directory_recursive(&long_path).with_context(|| {
+                format!(
+                    "Failed to recursively delete directory contents: {}",
+                    path.display()
+                )
+            })?;
 
             // Remove read-only attribute from root directory
             SetFileAttributesW(path_wide.as_ptr(), attrs & !FILE_ATTRIBUTE_READONLY);
@@ -411,8 +420,9 @@ unsafe fn remove_directory_recursive(path: &Path) -> Result<()> {
                     unsafe {
                         FindClose(find_handle);
                     }
-                    return Err(std::io::Error::from_raw_os_error(err as i32))
-                        .with_context(|| format!("Failed to delete directory: {}", item_path.display()));
+                    return Err(std::io::Error::from_raw_os_error(err as i32)).with_context(|| {
+                        format!("Failed to delete directory: {}", item_path.display())
+                    });
                 }
             } else {
                 // Remove read-only attribute
@@ -428,8 +438,9 @@ unsafe fn remove_directory_recursive(path: &Path) -> Result<()> {
                     unsafe {
                         FindClose(find_handle);
                     }
-                    return Err(std::io::Error::from_raw_os_error(err as i32))
-                        .with_context(|| format!("Failed to delete file: {}", item_path.display()));
+                    return Err(std::io::Error::from_raw_os_error(err as i32)).with_context(|| {
+                        format!("Failed to delete file: {}", item_path.display())
+                    });
                 }
             }
         }
@@ -502,10 +513,12 @@ fn remove_readonly_recursively(path: &Path) -> Result<()> {
         }
 
         if metadata.is_dir() {
-            for entry in
-                fs::read_dir(path).with_context(|| format!("Failed to read directory: {}", path.display()))?
+            for entry in fs::read_dir(path)
+                .with_context(|| format!("Failed to read directory: {}", path.display()))?
             {
-                let entry = entry.with_context(|| format!("Failed to read directory entry: {}", path.display()))?;
+                let entry = entry.with_context(|| {
+                    format!("Failed to read directory entry: {}", path.display())
+                })?;
                 remove_readonly_recursively(&entry.path())?;
             }
         }
@@ -530,11 +543,6 @@ fn is_retryable_error(e: &std::io::Error) -> bool {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-fn is_retryable_error(_e: &std::io::Error) -> bool {
-    false
-}
-
 /// File deletion with exponential backoff retry
 #[cfg(target_os = "windows")]
 fn remove_with_retry(file: &FileInfo, anyway: bool) -> Result<()> {
@@ -554,7 +562,8 @@ fn remove_with_retry(file: &FileInfo, anyway: bool) -> Result<()> {
                 if !should_retry || attempt == RETRY_MAX_ATTEMPTS {
                     return Err(err.context(format!(
                         "Deletion failed (after {} retries): {}",
-                        attempt, file.path.display()
+                        attempt,
+                        file.path.display()
                     )));
                 }
 
@@ -611,8 +620,9 @@ fn remove_entry(file: &FileInfo) -> Result<()> {
                             }
                         }
                         // Try deleting again
-                        return fs::remove_file(&file.path)
-                            .with_context(|| format!("Failed to delete symlink: {}", file.path.display()));
+                        return fs::remove_file(&file.path).with_context(|| {
+                            format!("Failed to delete symlink: {}", file.path.display())
+                        });
                     }
                     return Err(e.into());
                 }

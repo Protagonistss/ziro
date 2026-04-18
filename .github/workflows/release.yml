@@ -1,13 +1,10 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g 0.0.22)'
+        description: 'Version to release (e.g. 0.0.23)'
         required: true
         type: string
 
@@ -20,13 +17,11 @@ permissions:
 jobs:
   prepare:
     name: Prepare Release
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -35,7 +30,7 @@ jobs:
         run: |
           VERSION="${{ github.event.inputs.version }}"
           if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "Error: Invalid version format '$VERSION'. Expected semver (e.g 0.0.22)"
+            echo "Error: Invalid version format '$VERSION'. Expected semver (e.g. 0.0.23)"
             exit 1
           fi
 
@@ -47,46 +42,37 @@ jobs:
             exit 1
           fi
 
-      - name: Update Cargo.toml version
+      - name: Sync versions
         run: |
           VERSION="${{ github.event.inputs.version }}"
           sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
-
-      - name: Update package.json version
-        run: |
-          VERSION="${{ github.event.inputs.version }}"
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
-      - name: Verify versions match
-        run: |
           CARGO_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
           NPM_VERSION=$(grep '"version"' package.json | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
-          if [ "$CARGO_VERSION" != "$NPM_VERSION" ]; then
-            echo "Error: Version mismatch! Cargo: $CARGO_VERSION, npm: $NPM_VERSION"
-            exit 1
-          fi
+          [ "$CARGO_VERSION" = "$NPM_VERSION" ] || { echo "Version mismatch!"; exit 1; }
 
       - name: Generate CHANGELOG
         run: |
           VERSION="${{ github.event.inputs.version }}"
-          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD 2>/dev/null || echo "")
 
-          echo "## v$VERSION ($(date +%Y-%m-%d))" > /tmp/changelog_entry.md
-          echo "" >> /tmp/changelog_entry.md
-
-          if [ -n "$LAST_TAG" ]; then
-            echo "Changes since $LAST_TAG:" >> /tmp/changelog_entry.md
-            echo "" >> /tmp/changelog_entry.md
-            git log "$LAST_TAG"..HEAD --pretty=format:"- %s (%h)" >> /tmp/changelog_entry.md
-          else
-            echo "Initial release" >> /tmp/changelog_entry.md
-          fi
-          echo "" >> /tmp/changelog_entry.md
-          echo "" >> /tmp/changelog_entry.md
+          {
+            echo "## v$VERSION ($(date +%Y-%m-%d))"
+            echo ""
+            if [ -n "$LAST_TAG" ]; then
+              echo "Changes since $LAST_TAG:"
+              echo ""
+              git log "$LAST_TAG"..HEAD --pretty=format:"- %s (%h)"
+            else
+              echo "Initial release"
+            fi
+            echo ""
+            echo ""
+          } > /tmp/changelog_entry.md
 
           if [ -f CHANGELOG.md ]; then
-            cat /tmp/changelog_entry.md CHANGELOG.md > /tmp/changelog_new.md
-            mv /tmp/changelog_new.md CHANGELOG.md
+            cat /tmp/changelog_entry.md CHANGELOG.md > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
           else
             cat /tmp/changelog_entry.md > CHANGELOG.md
           fi
@@ -103,34 +89,23 @@ jobs:
 
       - name: Output version
         id: version
-        run: echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        run: echo "version=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
 
   create-release:
     name: Create Release
-    needs: [prepare]
-    if: always() && (needs.prepare.result == 'success' || github.event_name == 'push')
+    needs: prepare
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Get version
         id: get_version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-            echo "tag=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-            echo "tag=${GITHUB_REF}" >> $GITHUB_OUTPUT
-          fi
-
+        run: echo "version=${{ needs.prepare.outputs.version }}" >> $GITHUB_OUTPUT
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.get_version.outputs.tag }}
+          tag_name: ${{ steps.get_version.outputs.version }}
           name: Release ${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
@@ -148,52 +123,36 @@ jobs:
         platform:
           - name: Windows x64
             os: windows
-            arch: x86_64
             runner: windows-latest
             target: x86_64-pc-windows-msvc
-            binary_name: ziro.exe
-            asset_name: ziro-windows-x86_64.zip
-
+            binary: ziro.exe
+            asset: ziro-windows-x86_64.zip
           - name: Linux x64
             os: linux
-            arch: x86_64
             runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            binary_name: ziro
-            asset_name: ziro-linux-x86_64.zip
-
+            binary: ziro
+            asset: ziro-linux-x86_64.zip
           - name: Linux ARM64
             os: linux
-            arch: aarch64
             runner: ubuntu-latest
             target: aarch64-unknown-linux-gnu
-            binary_name: ziro
-            asset_name: ziro-linux-aarch64.zip
-
-          - name: macOS x64
-            os: macos
-            arch: x86_64
-            runner: macos-latest
-            target: x86_64-apple-darwin
-            binary_name: ziro
-            asset_name: ziro-macos-x86_64.zip
-
+            binary: ziro
+            asset: ziro-linux-aarch64.zip
           - name: macOS ARM64
             os: macos
-            arch: aarch64
             runner: macos-latest
             target: aarch64-apple-darwin
-            binary_name: ziro
-            asset_name: ziro-macos-aarch64.zip
-
+            binary: ziro
+            asset: ziro-macos-aarch64.zip
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.88.0
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
         with:
           targets: ${{ matrix.platform.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.platform.target }}
 
       - name: Install cross-compilation tools (Linux ARM64)
         if: matrix.platform.target == 'aarch64-unknown-linux-gnu'
@@ -201,45 +160,35 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
 
-      - name: Build (Linux ARM64)
-        if: matrix.platform.target == 'aarch64-unknown-linux-gnu'
+      - name: Build
         shell: bash
         run: |
-          export CC=aarch64-linux-gnu-gcc
-          export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+          if [ "${{ matrix.platform.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            export CC=aarch64-linux-gnu-gcc
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+          fi
           cargo build --release --target ${{ matrix.platform.target }}
 
-      - name: Build (Other platforms)
-        if: matrix.platform.target != 'aarch64-unknown-linux-gnu'
-        run: cargo build --release --target ${{ matrix.platform.target }}
-
-      - name: Package binary
-        id: package
+      - name: Package and checksum
         shell: bash
         run: |
-          mkdir -p release-package
-          cp target/${{ matrix.platform.target }}/release/${{ matrix.platform.binary_name }} "release-package/ziro${{ matrix.platform.os == 'windows' && '.exe' || '' }}"
-
-          if [ "${{ matrix.platform.os }}" != "windows" ]; then
-            chmod +x release-package/ziro
-          fi
-
-          cd release-package
+          mkdir -p pkg
+          BINARY="target/${{ matrix.platform.target }}/release/${{ matrix.platform.binary }}"
+          [ "${{ matrix.platform.os }}" != "windows" ] && chmod +x "$BINARY"
+          cp "$BINARY" "pkg/ziro${{ matrix.platform.os == 'windows' && '.exe' || '' }}"
+          cd pkg
           if [ "${{ matrix.platform.os }}" = "windows" ]; then
-            7z a "../${{ matrix.platform.asset_name }}" "ziro.exe"
+            7z a "../${{ matrix.platform.asset }}" "ziro.exe"
           else
-            zip "../${{ matrix.platform.asset_name }}" ziro
+            zip "../${{ matrix.platform.asset }}" ziro
           fi
-
-      - name: Generate SHA256 checksum
-        shell: bash
-        run: |
+          cd ..
           if [ "${{ matrix.platform.os }}" = "windows" ]; then
-            certutil -hashfile "${{ matrix.platform.asset_name }}" SHA256 | grep -v ":" | tr -d ' \r\n' | head -c 64 > hash.txt
-            echo "  ${{ matrix.platform.asset_name }}" >> hash.txt
-            mv hash.txt "${{ matrix.platform.asset_name }}.sha256"
+            certutil -hashfile "${{ matrix.platform.asset }}" SHA256 | grep -v ":" | tr -d ' \r\n' | head -c 64 > hash.txt
+            echo "  ${{ matrix.platform.asset }}" >> hash.txt
+            mv hash.txt "${{ matrix.platform.asset }}.sha256"
           else
-            shasum -a 256 "${{ matrix.platform.asset_name }}" > "${{ matrix.platform.asset_name }}.sha256"
+            shasum -a 256 "${{ matrix.platform.asset }}" > "${{ matrix.platform.asset }}.sha256"
           fi
 
       - name: Upload Release Assets
@@ -247,8 +196,8 @@ jobs:
         with:
           tag_name: ${{ needs.create-release.outputs.version }}
           files: |
-            ${{ matrix.platform.asset_name }}
-            ${{ matrix.platform.asset_name }}.sha256
+            ${{ matrix.platform.asset }}
+            ${{ matrix.platform.asset }}.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -256,31 +205,23 @@ jobs:
     name: Publish to crates.io
     needs: [create-release, build]
     runs-on: ubuntu-latest
+    if: ${{ secrets.CARGO_TOKEN != '' }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@1.88.0
-
-      - name: Publish to crates.io
-        run: cargo publish --token ${{ secrets.CARGO_TOKEN }} --allow-dirty
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - run: cargo publish --token ${{ secrets.CARGO_TOKEN }} --allow-dirty
 
   publish-npm:
     name: Publish to npm
     needs: [create-release, build]
     runs-on: ubuntu-latest
+    if: ${{ secrets.NPM_TOKEN != '' }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
-
-      - name: Publish to npm
-        run: npm publish
+      - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

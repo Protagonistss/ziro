@@ -1,12 +1,11 @@
 {
   "name": "@ithinku/ziro",
-  "version": "0.0.21",
+  "version": "0.0.22",
   "description": "跨平台端口管理工具 - 快速查找和终止占用端口的进程",
   "main": "bin/ziro.js",
   "bin": {
     "ziro": "./bin/ziro.js"
   },
-  
   "scripts": {
     "postinstall": "node scripts/install.js"
   },
@@ -53,4 +52,3 @@
     "access": "public"
   }
 }
-

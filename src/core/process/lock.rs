@@ -125,27 +125,6 @@ fn is_directory_locked(path: &Path) -> bool {
     }
 }
 
-/// Non-Windows: check if a directory is locked
-#[cfg(not(target_os = "windows"))]
-fn is_directory_locked(path: &Path) -> bool {
-    match std::fs::read_dir(path) {
-        Ok(_) => false,
-        Err(e) => match e.kind() {
-            std::io::ErrorKind::PermissionDenied => {
-                eprintln!(
-                    "Warning: directory access denied, may be locked: {}",
-                    path.display()
-                );
-                true
-            }
-            _ => {
-                eprintln!("Warning: directory read failed: {} - {}", path.display(), e);
-                true
-            }
-        },
-    }
-}
-
 /// Escape path as PowerShell single-quoted string (' → '')
 #[cfg(target_os = "windows")]
 fn ps_escape(s: &str) -> String {
@@ -190,12 +169,6 @@ fn check_file_locking_status(path: &Path) -> bool {
             }
         },
     }
-}
-
-/// No-op implementation for non-Windows systems
-#[cfg(not(target_os = "windows"))]
-fn check_file_locking_status(_path: &Path) -> bool {
-    true
 }
 
 /// Windows-specific: use RestartManager API to find processes holding a file
@@ -354,22 +327,19 @@ pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
         None => return Ok(pids),
     };
 
-    match std::process::Command::new("lsof")
+    if let Ok(output) = std::process::Command::new("lsof")
         .arg("-t")
         .arg(path_str)
         .output()
     {
-        Ok(output) => {
-            if output.status.success() {
-                let output_str = safe_command_output_to_string(&output.stdout);
-                for line in output_str.lines() {
-                    if let Ok(pid) = line.trim().parse::<u32>() {
-                        pids.push(pid);
-                    }
+        if output.status.success() {
+            let output_str = safe_command_output_to_string(&output.stdout);
+            for line in output_str.lines() {
+                if let Ok(pid) = line.trim().parse::<u32>() {
+                    pids.push(pid);
                 }
             }
         }
-        Err(_) => {}
     }
 
     Ok(pids)
@@ -455,16 +425,4 @@ fn find_processes_with_powershell(path_str: &str) -> Result<Vec<u32>> {
     }
 
     Ok(pids)
-}
-
-/// No-op implementation for non-Windows systems
-#[cfg(not(target_os = "windows"))]
-fn find_processes_with_handle(_path_str: &str) -> Result<Vec<u32>> {
-    Ok(vec![])
-}
-
-/// No-op implementation for non-Windows systems
-#[cfg(not(target_os = "windows"))]
-fn find_processes_with_powershell(_path_str: &str) -> Result<Vec<u32>> {
-    Ok(vec![])
 }

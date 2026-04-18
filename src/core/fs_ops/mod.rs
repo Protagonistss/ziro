@@ -543,11 +543,6 @@ fn is_retryable_error(e: &std::io::Error) -> bool {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-fn is_retryable_error(_e: &std::io::Error) -> bool {
-    false
-}
-
 /// File deletion with exponential backoff retry
 #[cfg(target_os = "windows")]
 fn remove_with_retry(file: &FileInfo, anyway: bool) -> Result<()> {

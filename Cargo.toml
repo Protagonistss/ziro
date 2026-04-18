@@ -1,6 +1,6 @@
 [package]
 name = "ziro"
-version = "0.0.22"
+version = "0.0.24"
 edition = "2024"
 authors = ["huangshan"]
 description = "Cross-platform port management tool - quickly find and kill processes occupying ports"

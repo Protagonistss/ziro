@@ -206,23 +206,25 @@ jobs:
     name: Publish to crates.io
     needs: [create-release, build]
     runs-on: ubuntu-latest
-    if: ${{ secrets.CARGO_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
-      - run: cargo publish --token ${{ secrets.CARGO_TOKEN }} --allow-dirty
+      - name: Publish
+        run: cargo publish --token ${{ secrets.CARGO_TOKEN }} --allow-dirty
+        continue-on-error: true
 
   publish-npm:
     name: Publish to npm
     needs: [create-release, build]
     runs-on: ubuntu-latest
-    if: ${{ secrets.NPM_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
-      - run: npm publish
+      - name: Publish
+        run: npm publish
+        continue-on-error: true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

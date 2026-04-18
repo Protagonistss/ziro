@@ -50,7 +50,7 @@ fn run() -> Result<()> {
             cmd,
             once,
         }) => handle_top(interval, limit, cpu, cmd, once)?,
-        None => println!("使用 'ziro --help' 查看可用命令"),
+        None => println!("Use 'ziro --help' to see available commands"),
     }
 
     Ok(())

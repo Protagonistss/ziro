@@ -1,5 +1,5 @@
 use super::encoding::safe_command_output_to_string;
-/// 文件锁定检测模块
+/// File lock detection module
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
@@ -17,9 +17,9 @@ pub struct FileLockInfo {
     pub processes: Vec<FileLockProcess>,
 }
 
-/// 检测文件是否被进程占用
+/// Detect if a file is locked by a process
 pub fn is_file_locked(path: &Path) -> bool {
-    // 如果文件不存在，不算被占用
+    // If file doesn't exist, it's not considered locked
     if !path.exists() {
         return false;
     }
@@ -35,32 +35,32 @@ pub fn is_file_locked(path: &Path) -> bool {
     }
 }
 
-/// Windows 文件锁定检测
+/// Windows file lock detection
 #[cfg(target_os = "windows")]
 fn is_file_locked_windows(path: &Path) -> bool {
     use std::fs::OpenOptions;
     use std::io::ErrorKind;
 
-    // 如果是目录，使用不同的检测方法
+    // For directories, use a different detection method
     if path.is_dir() {
         return is_directory_locked(path);
     }
 
-    // 尝试以写入模式打开文件，但更精确地分析错误类型
+    // Try to open file in write mode, but analyze error type more precisely
     match OpenOptions::new().write(true).create(false).open(path) {
         Ok(_) => false,
         Err(e) => match e.kind() {
             ErrorKind::PermissionDenied => check_file_locking_status(path),
             ErrorKind::NotFound => false,
             _ => {
-                eprintln!("警告: 文件打开失败，可能被占用: {} - {}", path.display(), e);
+                eprintln!("Warning: file open failed, may be in use: {} - {}", path.display(), e);
                 true
             }
         },
     }
 }
 
-/// Unix 文件锁定检测
+/// Unix file lock detection
 #[cfg(not(target_os = "windows"))]
 fn is_file_locked_unix(path: &Path) -> bool {
     let path_str = match path.to_str() {
@@ -74,26 +74,45 @@ fn is_file_locked_unix(path: &Path) -> bool {
     }
 }
 
-/// Windows特定：检查目录是否被锁定
+/// Windows-specific: check if a directory is locked
 #[cfg(target_os = "windows")]
 fn is_directory_locked(path: &Path) -> bool {
-    // 对于目录，尝试删除并重建来检测锁定
-    // 这是一个更安全的方法，不会实际删除目录内容
+    // First check basic directory access permissions
     match std::fs::read_dir(path) {
-        Ok(_) => {
-            // 能够读取目录，通常没有被锁定
+        Ok(entries) => {
+            // Use RestartManager to register directory path detection
+            if let Ok(pids) = find_processes_with_restart_manager(path) {
+                if !pids.is_empty() {
+                    return true;
+                }
+            }
+
+            // Sample first batch of child files in directory for lock detection
+            for entry in entries.take(10).flatten() {
+                let child = entry.path();
+                let metadata = match child.symlink_metadata() {
+                    Ok(m) => m,
+                    Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => return true,
+                    Err(_) => continue,
+                };
+                if !metadata.is_dir() && !metadata.file_type().is_symlink() {
+                    if let Ok(pids) = find_processes_with_restart_manager(&child) {
+                        if !pids.is_empty() {
+                            return true;
+                        }
+                    }
+                }
+            }
             false
         }
         Err(e) => {
             match e.kind() {
                 std::io::ErrorKind::PermissionDenied => {
-                    // 权限被拒绝，可能被锁定
-                    eprintln!("警告: 目录访问被拒绝，可能被锁定: {}", path.display());
+                    eprintln!("Warning: directory access denied, may be locked: {}", path.display());
                     true
                 }
                 _ => {
-                    // 其他错误，保守起见假设被锁定
-                    eprintln!("警告: 目录读取失败: {} - {}", path.display(), e);
+                    eprintln!("Warning: directory read failed: {} - {}", path.display(), e);
                     true
                 }
             }
@@ -101,73 +120,66 @@ fn is_directory_locked(path: &Path) -> bool {
     }
 }
 
-/// Windows特定：更精确地检查文件锁定状态
+/// Escape path as PowerShell single-quoted string (' → '')
+#[cfg(target_os = "windows")]
+fn ps_escape(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
+/// Windows-specific: more precise file lock status check
 #[cfg(target_os = "windows")]
 fn check_file_locking_status(path: &Path) -> bool {
     use std::fs::OpenOptions;
 
-    // 尝试多种方式打开文件来区分锁定和权限问题
-    let path_str = path.to_string_lossy();
-
-    // 方法1：尝试以只读方式打开
+    // Method 1: try opening in read-only mode
     if OpenOptions::new().read(true).open(path).is_ok() {
-        // 能够只读打开，但无法写入，很可能是锁定
+        // Can open read-only but not write, most likely locked
         return true;
     }
 
-    // 方法2：使用PowerShell检查文件句柄
-    match std::process::Command::new("powershell")
-        .args([
-            "-Command",
-            &format!(
-                "Get-Process | Where-Object {{ $_.Modules.FileName -eq '{path_str}' }} | Measure-Object"
-            ),
-        ])
-        .output()
-    {
-        Ok(output) => {
-            if output.status.success() {
-                let output_str = String::from_utf8_lossy(&output.stdout);
-                // 如果有进程在使用该文件，返回true
-                !output_str.trim().contains("0")
-            } else {
-                // PowerShell命令失败，保守起见假设被锁定
-                true
-            }
-        }
-        Err(_) => {
-            // PowerShell不可用，尝试最后的方法
-            // 尝试重命名文件来检测锁定
-            let temp_path = path.with_extension("tmp_check");
-            match std::fs::rename(path, &temp_path) {
-                Ok(_) => {
-                    // 能够重命名，说明没有被锁定，立即改回来
-                    let _ = std::fs::rename(&temp_path, path);
-                    false
-                }
-                Err(_) => {
-                    // 无法重命名，说明被锁定
-                    true
+    // Method 2: try opening in append mode (doesn't modify content but needs write permission)
+    match OpenOptions::new().append(true).open(path) {
+        Ok(_) => false,
+        Err(e) => match e.kind() {
+            std::io::ErrorKind::PermissionDenied => true,
+            _ => {
+                // Other errors, use PowerShell as supplementary detection
+                let escaped = ps_escape(&path.to_string_lossy());
+                match std::process::Command::new("powershell")
+                    .args([
+                        "-Command",
+                        &format!(
+                            "Get-Process | Where-Object {{$_.Modules.FileName -eq '{}'}} | Measure-Object",
+                            escaped
+                        ),
+                    ])
+                    .output()
+                {
+                    Ok(output) if output.status.success() => {
+                        let output_str = String::from_utf8_lossy(&output.stdout);
+                        !output_str.trim().contains("0")
+                    }
+                    _ => true,
                 }
             }
-        }
+        },
     }
 }
 
-/// 非Windows系统的空实现
+/// No-op implementation for non-Windows systems
 #[cfg(not(target_os = "windows"))]
 fn is_directory_locked(_path: &Path) -> bool {
     false
 }
 
-/// 非Windows系统的空实现
+/// No-op implementation for non-Windows systems
 #[cfg(not(target_os = "windows"))]
 fn check_file_locking_status(_path: &Path) -> bool {
     true
 }
 
-/// Windows特定：使用 RestartManager API 查找占用文件的进程
-/// 这是 Windows 资源管理器使用的同一套 API，能精确检测文件句柄占用
+/// Windows-specific: use RestartManager API to find processes holding a file
+/// This is the same API used by Windows Explorer, providing precise file handle detection
 #[cfg(target_os = "windows")]
 fn find_processes_with_restart_manager(path: &Path) -> Result<Vec<u32>> {
     use std::os::windows::ffi::OsStrExt;
@@ -266,7 +278,7 @@ fn find_processes_with_restart_manager(path: &Path) -> Result<Vec<u32>> {
     Ok(pids)
 }
 
-/// 查找占用指定文件的进程
+/// Find processes locking a specified file
 pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
     let mut pids = Vec::new();
 
@@ -277,12 +289,12 @@ pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
     if cfg!(target_os = "windows") {
         let path_str = path.to_string_lossy();
 
-        // 方法1（优先）：使用 RestartManager API 精确检测文件句柄占用
+        // Method 1 (preferred): use RestartManager API for precise file handle detection
         if let Ok(rm_pids) = find_processes_with_restart_manager(path) {
             pids.extend(rm_pids);
         }
 
-        // 方法2：使用 handle.exe 工具（如果有）
+        // Method 2: use handle.exe tool (if available)
         if let Ok(handle_pids) = find_processes_with_handle(&path_str) {
             for pid in handle_pids {
                 if !pids.contains(&pid) {
@@ -291,7 +303,7 @@ pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
             }
         }
 
-        // 方法3：使用 PowerShell 查找（兼容兜底）
+        // Method 3: use PowerShell to find (compatibility fallback)
         if let Ok(ps_pids) = find_processes_with_powershell(&path_str) {
             for pid in ps_pids {
                 if !pids.contains(&pid) {
@@ -300,7 +312,7 @@ pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
             }
         }
     } else {
-        // Unix 系统的实现
+        // Unix implementation
         let path_str = match path.to_str() {
             Some(s) => s,
             None => return Ok(pids),
@@ -322,7 +334,7 @@ pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
                 }
             }
             Err(_) => {
-                // lsof 命令不可用
+                // lsof command not available
             }
         }
     }
@@ -330,7 +342,7 @@ pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
     Ok(pids)
 }
 
-/// Windows特定：使用 handle.exe 查找占用进程
+/// Windows-specific: use handle.exe to find locking processes
 #[cfg(target_os = "windows")]
 fn find_processes_with_handle(path_str: &str) -> Result<Vec<u32>> {
     let mut pids = Vec::new();
@@ -343,7 +355,7 @@ fn find_processes_with_handle(path_str: &str) -> Result<Vec<u32>> {
             if output.status.success() {
                 let output_str = safe_command_output_to_string(&output.stdout);
                 for line in output_str.lines() {
-                    // handle.exe 输出格式通常是：pid: process_name path
+                    // handle.exe output format is typically: pid: process_name path
                     if line.contains("pid:") {
                         let parts: Vec<&str> = line.split_whitespace().collect();
                         if parts.len() >= 2
@@ -357,29 +369,28 @@ fn find_processes_with_handle(path_str: &str) -> Result<Vec<u32>> {
             }
         }
         Err(_) => {
-            // handle.exe 不可用，这是正常的
+            // handle.exe not available, this is normal
         }
     }
 
     Ok(pids)
 }
 
-/// Windows特定：使用 PowerShell 查找占用进程
+/// Windows-specific: use PowerShell to find locking processes
 #[cfg(target_os = "windows")]
 fn find_processes_with_powershell(path_str: &str) -> Result<Vec<u32>> {
     let mut pids = Vec::new();
 
-    // 使用PowerShell命令查找进程
+    let escaped = ps_escape(path_str);
+
     let powershell_commands = vec![
-        // 方法1：查找进程模块
         format!(
             "Get-Process | Where-Object {{$_.MainModule.FileName -like '*{}*'}} | Select-Object -ExpandProperty Id",
-            path_str
+            escaped
         ),
-        // 方法2：查找进程句柄
         format!(
             "$path = '{}'; Get-Process | ForEach-Object {{ if ($_.Modules.FileName -contains $path) {{ $_.Id }} }}",
-            path_str
+            escaped
         ),
     ];
 
@@ -404,7 +415,7 @@ fn find_processes_with_powershell(path_str: &str) -> Result<Vec<u32>> {
                 }
             }
             Err(_) => {
-                // PowerShell 命令失败，继续尝试下一个
+                // PowerShell command failed, continue to the next one
                 continue;
             }
         }
@@ -413,13 +424,13 @@ fn find_processes_with_powershell(path_str: &str) -> Result<Vec<u32>> {
     Ok(pids)
 }
 
-/// 非Windows系统的空实现
+/// No-op implementation for non-Windows systems
 #[cfg(not(target_os = "windows"))]
 fn find_processes_with_handle(_path_str: &str) -> Result<Vec<u32>> {
     Ok(vec![])
 }
 
-/// 非Windows系统的空实现
+/// No-op implementation for non-Windows systems
 #[cfg(not(target_os = "windows"))]
 fn find_processes_with_powershell(_path_str: &str) -> Result<Vec<u32>> {
     Ok(vec![])

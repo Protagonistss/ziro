@@ -1,6 +1,6 @@
-//! 进程管理模块
+//! Process management module
 //!
-//! 提供进程查询、终止、文件锁定检测等功能
+//! Provides process querying, termination, and file lock detection capabilities
 
 use anyhow::{Result, anyhow};
 use std::path::PathBuf;
@@ -8,14 +8,14 @@ use std::thread;
 use std::time::Duration;
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 
-// 导出子模块
+// Export submodules
 pub mod encoding;
 pub mod lock;
 
-// 重新导出常用类型和函数
+// Re-export commonly used types and functions
 pub use lock::{FileLockInfo, FileLockProcess, find_processes_by_file, is_file_locked};
 
-/// 终止指定 PID 的进程
+/// Kill the process with the given PID
 pub fn kill_process(pid: u32) -> Result<()> {
     let mut sys = System::new_with_specifics(
         RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
@@ -28,21 +28,21 @@ pub fn kill_process(pid: u32) -> Result<()> {
         if process.kill() {
             Ok(())
         } else {
-            Err(anyhow!("无法终止进程 {pid} (可能需要管理员权限)"))
+            Err(anyhow!("Failed to kill process {pid} (administrator privileges may be required)"))
         }
     } else {
-        Err(anyhow!("进程 {pid} 不存在"))
+        Err(anyhow!("Process {pid} does not exist"))
     }
 }
 
-/// 批量终止进程
+/// Kill multiple processes
 pub fn kill_processes(pids: &[u32]) -> Vec<(u32, Result<()>)> {
     pids.iter().map(|&pid| (pid, kill_process(pid))).collect()
 }
 
-/// 强制终止指定 PID 的进程（多次尝试）
+/// Force kill the process with the given PID (multiple attempts)
 pub fn kill_process_force(pid: u32) -> Result<()> {
-    // 首先检查进程是否存在
+    // First check if the process exists
     {
         let mut sys = System::new_with_specifics(
             RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
@@ -51,12 +51,12 @@ pub fn kill_process_force(pid: u32) -> Result<()> {
 
         let pid_obj = sysinfo::Pid::from_u32(pid);
         if sys.process(pid_obj).is_none() {
-            // 进程已经不存在了，认为是成功的
+            // Process no longer exists, consider it a success
             return Ok(());
         }
     }
 
-    // 尝试最多 3 次终止进程
+    // Attempt to kill the process up to 3 times
     for attempt in 1..=3 {
         {
             let mut sys = System::new_with_specifics(
@@ -67,43 +67,43 @@ pub fn kill_process_force(pid: u32) -> Result<()> {
             let pid_obj = sysinfo::Pid::from_u32(pid);
             if let Some(process) = sys.process(pid_obj) {
                 if process.kill() {
-                    // 等待进程真正退出
+                    // Wait for the process to actually exit
                     thread::sleep(Duration::from_millis(500));
 
-                    // 刷新进程状态并检查是否是否存在
+                    // Refresh process status and check if it still exists
                     sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
                     if !sys.processes().contains_key(&pid_obj) {
                         return Ok(());
                     }
                 } else {
-                    // 如果 kill() 返回 false
+                    // If kill() returns false
                     if attempt == 3 {
-                        return Err(anyhow!("无法强制终止进程 {pid} (可能需要管理员权限)"));
+                        return Err(anyhow!("Failed to force kill process {pid} (administrator privileges may be required)"));
                     }
                 }
             } else {
-                // 进程已经不存在了，认为是成功的
+                // Process no longer exists, consider it a success
                 return Ok(());
             }
         }
 
-        // 如果不是最后一次尝试，等待一段时间后重试
+        // If not the last attempt, wait before retrying
         if attempt < 3 {
             thread::sleep(Duration::from_millis(1000));
         }
     }
 
-    Err(anyhow!("强制终止进程 {pid} 失败，进程可能仍在运行"))
+    Err(anyhow!("Force kill of process {pid} failed, the process may still be running"))
 }
 
-/// 批量强制终止进程
+/// Force kill multiple processes
 pub fn kill_processes_force(pids: &[u32]) -> Vec<(u32, Result<()>)> {
     pids.iter()
         .map(|&pid| (pid, kill_process_force(pid)))
         .collect()
 }
 
-/// 检查文件占用情况
+/// Check file lock status
 pub fn inspect_file_locks(paths: &[PathBuf]) -> Result<Vec<FileLockInfo>> {
     let mut sys = System::new_with_specifics(
         RefreshKind::new().with_processes(ProcessRefreshKind::everything()),

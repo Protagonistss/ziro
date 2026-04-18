@@ -3,7 +3,7 @@ use crate::ui::icons::StyledEmoji;
 use colored::{Color, Colorize};
 use std::env;
 
-/// 统一的颜色与图标主题
+/// Unified color and icon theme
 pub struct Theme {
     use_color: bool,
 }
@@ -15,7 +15,7 @@ impl Theme {
         }
     }
 
-    /// 检测是否启用颜色
+    /// Detect whether color is enabled
     fn detect_color_support() -> bool {
         if let Ok(value) = env::var("ZIRO_PLAIN") {
             if Self::is_truthy(&value) {
@@ -29,7 +29,7 @@ impl Theme {
             }
         }
 
-        // 兼容通用的 NO_COLOR 约定
+        // Honor the standard NO_COLOR convention
         if let Ok(value) = env::var("NO_COLOR") {
             if value.is_empty() || Self::is_truthy(&value) {
                 return false;

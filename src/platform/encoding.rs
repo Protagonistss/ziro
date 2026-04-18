@@ -1,9 +1,9 @@
-// Windows 控制台 UTF-8 初始化
+// Windows console UTF-8 initialization
 #[cfg(target_os = "windows")]
 pub fn init_windows_console() {
     use winapi::um::wincon::{SetConsoleCP, SetConsoleOutputCP};
     unsafe {
-        // 设置输入输出编码为 UTF-8，减少乱码
+        // Set input/output encoding to UTF-8 to reduce garbled text
         SetConsoleOutputCP(65001);
         SetConsoleCP(65001);
     }
@@ -11,11 +11,11 @@ pub fn init_windows_console() {
     enable_virtual_terminal_processing();
 }
 
-// 非 Windows 平台无需处理
+// No-op for non-Windows platforms
 #[cfg(not(target_os = "windows"))]
 pub fn init_windows_console() {}
 
-/// 启用 Windows 控制台的虚拟终端序列，确保光标移动/清屏等 ANSI 序列生效
+/// Enable Windows console virtual terminal sequences for cursor movement, screen clearing, etc.
 #[cfg(target_os = "windows")]
 fn enable_virtual_terminal_processing() {
     use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};

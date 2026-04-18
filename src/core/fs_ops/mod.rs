@@ -3,7 +3,7 @@ use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Windows 删除重试参数
+/// Windows deletion retry parameters
 #[cfg(target_os = "windows")]
 const RETRY_MAX_ATTEMPTS: u32 = 5;
 #[cfg(target_os = "windows")]
@@ -19,24 +19,24 @@ pub struct FileInfo {
     pub is_symlink: bool,
 }
 
-/// 验证路径是否存在
+/// Validate that paths exist
 pub fn validate_paths(paths: &[PathBuf]) -> Result<()> {
     for path in paths {
         if !path.exists() {
-            return Err(anyhow!("路径不存在: {}", path.display()));
+            return Err(anyhow!("Path does not exist: {}", path.display()));
         }
     }
     Ok(())
 }
 
-/// 收集待删除的文件/目录信息
+/// Collect file/directory info for removal
 pub fn collect_files_to_remove(paths: &[PathBuf], recursive: bool) -> Result<Vec<FileInfo>> {
     let mut files = Vec::new();
 
     for path in paths {
         let metadata = path
             .symlink_metadata()
-            .with_context(|| format!("无法获取文件元数据: {}", path.display()))?;
+            .with_context(|| format!("Failed to get file metadata: {}", path.display()))?;
         let is_symlink = metadata.file_type().is_symlink();
         let is_dir = metadata.is_dir() && !is_symlink;
 
@@ -50,10 +50,10 @@ pub fn collect_files_to_remove(paths: &[PathBuf], recursive: bool) -> Result<Vec
                     is_symlink: false,
                 });
             } else {
-                // 非递归模式仅允许空目录
+                // Non-recursive mode: only allow empty directories
                 if path.read_dir()?.next().is_some() {
                     return Err(anyhow!(
-                        "目录删除需要 -r/--recursive 参数: {}",
+                        "Directory requires -r/--recursive flag: {}",
                         path.display()
                     ));
                 }
@@ -77,15 +77,15 @@ pub fn collect_files_to_remove(paths: &[PathBuf], recursive: bool) -> Result<Vec
     Ok(files)
 }
 
-/// 递归收集目录内容（不跟随符号链接）
+/// Recursively collect directory contents (does not follow symlinks)
 fn collect_dir_files(dir: &Path, files: &mut Vec<FileInfo>) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("无法读取目录: {}", dir.display()))?
+    for entry in fs::read_dir(dir).with_context(|| format!("Failed to read directory: {}", dir.display()))?
     {
-        let entry = entry.with_context(|| format!("无法读取目录项: {}", dir.display()))?;
+        let entry = entry.with_context(|| format!("Failed to read directory entry: {}", dir.display()))?;
         let path = entry.path();
         let metadata = path
             .symlink_metadata()
-            .with_context(|| format!("无法获取文件元数据: {}", path.display()))?;
+            .with_context(|| format!("Failed to get file metadata: {}", path.display()))?;
         let is_symlink = metadata.file_type().is_symlink();
         let is_dir = metadata.is_dir() && !is_symlink;
 
@@ -110,34 +110,35 @@ fn collect_dir_files(dir: &Path, files: &mut Vec<FileInfo>) -> Result<()> {
     Ok(())
 }
 
-/// 执行删除
+/// Execute deletion
 pub fn remove_files(
     files: &[FileInfo],
     dry_run: bool,
     verbose: bool,
-    _anyway: bool,
+    anyway: bool,
 ) -> Vec<(PathBuf, Result<()>)> {
     let theme = Theme::new();
 
-    // Windows 特殊处理：尝试批量删除
+    // Windows special handling: try bulk deletion
     #[cfg(target_os = "windows")]
-    if let Some(results) = try_windows_bulk_remove(files, dry_run, verbose, &theme) {
+    if let Some(results) = try_windows_bulk_remove(files, dry_run, verbose, anyway, &theme) {
         return results;
     }
 
-    // 通用逐个删除逻辑
-    remove_files_individually(files, dry_run, verbose, &theme)
+    // Generic individual deletion logic
+    remove_files_individually(files, dry_run, verbose, anyway, &theme)
 }
 
-/// Windows 特殊处理：尝试批量删除根目录
+/// Windows special handling: try bulk deletion of root directory
 #[cfg(target_os = "windows")]
 fn try_windows_bulk_remove(
     files: &[FileInfo],
     dry_run: bool,
     verbose: bool,
+    anyway: bool,
     theme: &Theme,
 ) -> Option<Vec<(PathBuf, Result<()>)>> {
-    // 查找用户直接指定的根目录
+    // Find the root directory specified by the user
     let root_dir = files.iter().find(|f| {
         f.is_dir
             && !files
@@ -149,7 +150,7 @@ fn try_windows_bulk_remove(
         return Some(vec![(root_dir.path.clone(), Ok(()))]);
     }
 
-    // 尝试直接使用 remove_dir_all 删除整个目录树，带重试
+    // Try to use remove_dir_all to delete the entire directory tree, with retries
     use crate::core::process::{find_processes_by_file, kill_process_force};
 
     let mut wait_ms = RETRY_INITIAL_WAIT_MS;
@@ -166,16 +167,29 @@ fn try_windows_bulk_remove(
                 last_err = Some(e);
 
                 let io_err = last_err.as_ref().and_then(|e| e.downcast_ref::<std::io::Error>());
-                let should_retry = io_err.map_or(false, |e| is_retryable_error(e));
+                let should_retry = io_err.is_some_and(is_retryable_error);
 
                 if !should_retry || attempt == RETRY_MAX_ATTEMPTS {
                     break;
                 }
 
-                if let Ok(pids) = find_processes_by_file(&root_dir.path) {
-                    for pid in pids {
-                        let _ = kill_process_force(pid);
+                if anyway {
+                    if let Ok(pids) = find_processes_by_file(&root_dir.path) {
+                        for pid in pids {
+                            let _ = kill_process_force(pid);
+                        }
                     }
+                }
+
+                if verbose {
+                    println!(
+                        "{} {}",
+                        theme.icon_warning(),
+                        theme.muted(format!(
+                            "Retrying ({}/{})...",
+                            attempt + 1, RETRY_MAX_ATTEMPTS
+                        ))
+                    );
                 }
 
                 std::thread::sleep(std::time::Duration::from_millis(wait_ms));
@@ -189,7 +203,7 @@ fn try_windows_bulk_remove(
             println!(
                 "{} {}",
                 theme.icon_success(),
-                theme.muted(format!("删除 {}", root_dir.path.display()))
+                theme.muted(format!("Removed {}", root_dir.path.display()))
             );
         }
         Some(vec![(root_dir.path.clone(), Ok(()))])
@@ -199,8 +213,8 @@ fn try_windows_bulk_remove(
                 "{} {}",
                 theme.icon_warning(),
                 theme.warning(format!(
-                    "批量删除失败，尝试逐个删除: {}",
-                    last_err.unwrap_or_else(|| anyhow::anyhow!("未知错误"))
+                    "Bulk delete failed, trying individual deletion: {}",
+                    last_err.unwrap_or_else(|| anyhow::anyhow!("Unknown error"))
                 ))
             );
         }
@@ -208,16 +222,17 @@ fn try_windows_bulk_remove(
     }
 }
 
-/// 逐个删除文件（通用逻辑）
+/// Delete files individually (generic logic)
 fn remove_files_individually(
     files: &[FileInfo],
     dry_run: bool,
     verbose: bool,
+    anyway: bool,
     theme: &Theme,
 ) -> Vec<(PathBuf, Result<()>)> {
     let mut results = Vec::new();
 
-    // 确保先删文件后删目录（深度优先）
+    // Ensure files are deleted before directories (depth-first)
     let mut sorted = files.to_vec();
     sorted.sort_by(|a, b| {
         if a.is_dir && !b.is_dir {
@@ -235,7 +250,7 @@ fn remove_files_individually(
         let result = if dry_run {
             Ok(())
         } else {
-            remove_with_retry(&file)
+            remove_with_retry(&file, anyway)
         };
 
         if verbose {
@@ -243,12 +258,12 @@ fn remove_files_individually(
                 Ok(_) => println!(
                     "{} {}",
                     theme.icon_success(),
-                    theme.muted(format!("删除 {}", file.path.display()))
+                    theme.muted(format!("Removed {}", file.path.display()))
                 ),
                 Err(e) => println!(
                     "{} {}",
                     theme.icon_error(),
-                    theme.error(format!("删除失败 {} - {}", file.path.display(), e))
+                    theme.error(format!("Failed to delete {} - {}", file.path.display(), e))
                 ),
             }
         }
@@ -259,16 +274,16 @@ fn remove_files_individually(
     results
 }
 
-/// Windows 上删除包含符号链接的目录
+/// Delete directories containing symlinks on Windows
 #[cfg(target_os = "windows")]
 fn remove_dir_all_with_symlinks(path: &Path) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
 
-    // 转换为 Windows 长路径格式 (\\?\ 前缀)
-    // 这允许绕过 MAX_PATH (260 字符) 限制
+    // Convert to Windows long path format (\\?\ prefix)
+    // This bypasses the MAX_PATH (260 character) limit
     let long_path = to_long_path(path)?;
 
-    // 使用 Windows API 删除目录
+    // Use Windows API to delete directory
     unsafe {
         use windows_sys::Win32::Foundation::GetLastError;
         use windows_sys::Win32::Storage::FileSystem::{
@@ -283,45 +298,45 @@ fn remove_dir_all_with_symlinks(path: &Path) -> Result<()> {
             .chain(std::iter::once(0))
             .collect();
 
-        // 获取文件属性
+        // Get file attributes
         let attrs = GetFileAttributesW(path_wide.as_ptr());
         if attrs == INVALID_FILE_ATTRIBUTES {
-            return Err(anyhow!("无法获取文件属性: {}", path.display()));
+            return Err(anyhow!("Failed to get file attributes: {}", path.display()));
         }
 
-        // 检查是否为符号链接（重解析点）
+        // Check if it is a symlink (reparse point)
         let is_reparse_point = (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
 
         if is_reparse_point {
-            // 对于符号链接，使用 DeleteFileW
+            // For symlinks, use DeleteFileW
             if DeleteFileW(path_wide.as_ptr()) == 0 {
                 let err = GetLastError();
                 return Err(std::io::Error::from_raw_os_error(err as i32))
-                    .with_context(|| format!("无法删除符号链接: {}", path.display()));
+                    .with_context(|| format!("Failed to delete symlink: {}", path.display()));
             }
         } else if (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0 {
-            // 对于目录，递归删除内容
+            // For directories, recursively delete contents
             remove_directory_recursive(&long_path)
-                .with_context(|| format!("递归删除目录内容失败: {}", path.display()))?;
+                .with_context(|| format!("Failed to recursively delete directory contents: {}", path.display()))?;
 
-            // 移除根目录的只读属性
+            // Remove read-only attribute from root directory
             SetFileAttributesW(path_wide.as_ptr(), attrs & !FILE_ATTRIBUTE_READONLY);
 
-            // 删除空目录
+            // Delete empty directory
             if RemoveDirectoryW(path_wide.as_ptr()) == 0 {
                 let err = GetLastError();
                 return Err(std::io::Error::from_raw_os_error(err as i32))
-                    .with_context(|| format!("无法删除目录: {}", path.display()));
+                    .with_context(|| format!("Failed to delete directory: {}", path.display()));
             }
         } else {
-            // 移除文件的只读属性
+            // Remove read-only attribute from file
             SetFileAttributesW(path_wide.as_ptr(), attrs & !FILE_ATTRIBUTE_READONLY);
 
-            // 对于文件，使用 DeleteFileW
+            // For files, use DeleteFileW
             if DeleteFileW(path_wide.as_ptr()) == 0 {
                 let err = GetLastError();
                 return Err(std::io::Error::from_raw_os_error(err as i32))
-                    .with_context(|| format!("无法删除文件: {}", path.display()));
+                    .with_context(|| format!("Failed to delete file: {}", path.display()));
             }
         }
     }
@@ -329,7 +344,7 @@ fn remove_dir_all_with_symlinks(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// 递归删除目录内容（使用长路径）
+/// Recursively delete directory contents (using long paths)
 #[cfg(target_os = "windows")]
 unsafe fn remove_directory_recursive(path: &Path) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
@@ -339,7 +354,7 @@ unsafe fn remove_directory_recursive(path: &Path) -> Result<()> {
         SetFileAttributesW, WIN32_FIND_DATAW,
     };
 
-    // 构建搜索模式：路径\*
+    // Build search pattern: path\*
     let mut search_pattern = path.to_path_buf();
     search_pattern.push("*");
     let search_wide: Vec<u16> = search_pattern
@@ -352,12 +367,12 @@ unsafe fn remove_directory_recursive(path: &Path) -> Result<()> {
     let find_handle = unsafe { FindFirstFileW(search_wide.as_ptr(), &mut find_data) };
 
     if find_handle == windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE {
-        // 目录为空或出错，返回成功
+        // Directory is empty or error occurred, return success
         return Ok(());
     }
 
     loop {
-        // 跳过 . 和 ..
+        // Skip . and ..
         let name = find_data.cFileName[..]
             .iter()
             .take_while(|&&c| c != 0)
@@ -379,42 +394,42 @@ unsafe fn remove_directory_recursive(path: &Path) -> Result<()> {
             let is_reparse_point = (find_data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
 
             if is_dir && !is_reparse_point {
-                // 递归删除子目录
+                // Recursively delete subdirectory
                 unsafe {
                     remove_directory_recursive(&item_path)?;
                 }
-                // 移除只读属性
+                // Remove read-only attribute
                 unsafe {
                     SetFileAttributesW(
                         item_wide.as_ptr(),
                         find_data.dwFileAttributes & !FILE_ATTRIBUTE_READONLY,
                     );
                 }
-                // 删除空目录
+                // Delete empty directory
                 if unsafe { RemoveDirectoryW(item_wide.as_ptr()) } == 0 {
                     let err = unsafe { windows_sys::Win32::Foundation::GetLastError() };
                     unsafe {
                         FindClose(find_handle);
                     }
                     return Err(std::io::Error::from_raw_os_error(err as i32))
-                        .with_context(|| format!("无法删除目录: {}", item_path.display()));
+                        .with_context(|| format!("Failed to delete directory: {}", item_path.display()));
                 }
             } else {
-                // 移除只读属性
+                // Remove read-only attribute
                 unsafe {
                     SetFileAttributesW(
                         item_wide.as_ptr(),
                         find_data.dwFileAttributes & !FILE_ATTRIBUTE_READONLY,
                     );
                 }
-                // 删除文件或符号链接
+                // Delete file or symlink
                 if unsafe { DeleteFileW(item_wide.as_ptr()) } == 0 {
                     let err = unsafe { windows_sys::Win32::Foundation::GetLastError() };
                     unsafe {
                         FindClose(find_handle);
                     }
                     return Err(std::io::Error::from_raw_os_error(err as i32))
-                        .with_context(|| format!("无法删除文件: {}", item_path.display()));
+                        .with_context(|| format!("Failed to delete file: {}", item_path.display()));
                 }
             }
         }
@@ -430,14 +445,14 @@ unsafe fn remove_directory_recursive(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// 将路径转换为 Windows 长路径格式
+/// Convert path to Windows long path format
 #[cfg(target_os = "windows")]
 fn to_long_path(path: &Path) -> Result<PathBuf> {
-    // 尝试获取绝对路径，如果失败则使用原始路径
+    // Try to get absolute path, fall back to original if failed
     let absolute = match fs::canonicalize(path) {
         Ok(p) => p,
         Err(_) => {
-            // 如果 canonicalize 失败（可能是路径太长），使用绝对路径
+            // If canonicalize fails (possibly due to long path), use absolute path
             if path.is_absolute() {
                 path.to_path_buf()
             } else {
@@ -449,7 +464,7 @@ fn to_long_path(path: &Path) -> Result<PathBuf> {
         }
     };
 
-    // 检查是否已经是 UNC 路径
+    // Check if already a UNC path
     let path_str = absolute.to_string_lossy().to_string();
     let has_prefix = path_str.starts_with(r"\\?\") || path_str.starts_with(r"\\?\UNC\");
 
@@ -457,40 +472,40 @@ fn to_long_path(path: &Path) -> Result<PathBuf> {
         return Ok(absolute);
     }
 
-    // 添加 \\?\ 前缀
+    // Add \\?\ prefix
     let long_path = if let Some(stripped) = path_str.strip_prefix(r"\\") {
-        // UNC 路径：\\?\UNC\server\share
+        // UNC path: \\?\UNC\server\share
         PathBuf::from(format!(r"\\?\UNC\{}", stripped))
     } else {
-        // 普通路径：\\?\C:\path
+        // Regular path: \\?\C:\path
         PathBuf::from(format!(r"\\?{}", path_str))
     };
 
     Ok(long_path)
 }
 
-/// 递归移除目录及其内容的只读属性
+/// Recursively remove read-only attributes from directory and its contents
 #[cfg(target_os = "windows")]
 fn remove_readonly_recursively(path: &Path) -> Result<()> {
     let metadata = path
         .symlink_metadata()
-        .with_context(|| format!("无法获取路径元数据: {}", path.display()))?;
+        .with_context(|| format!("Failed to get path metadata: {}", path.display()))?;
 
-    // 只处理文件和目录，不处理符号链接
+    // Only process files and directories, skip symlinks
     if !metadata.file_type().is_symlink() {
         #[allow(clippy::permissions_set_readonly_false)]
         {
             let mut perms = metadata.permissions();
             perms.set_readonly(false);
             fs::set_permissions(path, perms)
-                .with_context(|| format!("无法设置权限: {}", path.display()))?;
+                .with_context(|| format!("Failed to set permissions: {}", path.display()))?;
         }
 
         if metadata.is_dir() {
             for entry in
-                fs::read_dir(path).with_context(|| format!("无法读取目录: {}", path.display()))?
+                fs::read_dir(path).with_context(|| format!("Failed to read directory: {}", path.display()))?
             {
-                let entry = entry.with_context(|| format!("无法读取目录项: {}", path.display()))?;
+                let entry = entry.with_context(|| format!("Failed to read directory entry: {}", path.display()))?;
                 remove_readonly_recursively(&entry.path())?;
             }
         }
@@ -498,12 +513,12 @@ fn remove_readonly_recursively(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// 判断 IO 错误是否可重试（Windows 特定）
-/// 仅以下情况触发重试：
+/// Determine if an IO error is retryable (Windows-specific)
+/// Retries are triggered only for:
 /// - PermissionDenied
-/// - Windows 错误码 32 (ERROR_SHARING_VIOLATION)
-/// - Windows 错误码 33 (ERROR_LOCK_VIOLATION)
-/// - Windows 错误码 5 (ERROR_ACCESS_DENIED)
+/// - Windows error code 32 (ERROR_SHARING_VIOLATION)
+/// - Windows error code 33 (ERROR_LOCK_VIOLATION)
+/// - Windows error code 5 (ERROR_ACCESS_DENIED)
 #[cfg(target_os = "windows")]
 fn is_retryable_error(e: &std::io::Error) -> bool {
     match e.kind() {
@@ -520,14 +535,9 @@ fn is_retryable_error(_e: &std::io::Error) -> bool {
     false
 }
 
-/// 带指数退避重试的文件删除
-/// 参数：
-/// - 最大重试次数：5
-/// - 初始等待：100ms
-/// - 指数因子：2（等待序列 100ms, 200ms, 400ms, 800ms, 1000ms）
-/// - 最大单次等待：1000ms
+/// File deletion with exponential backoff retry
 #[cfg(target_os = "windows")]
-fn remove_with_retry(file: &FileInfo) -> Result<()> {
+fn remove_with_retry(file: &FileInfo, anyway: bool) -> Result<()> {
     use crate::core::process::{find_processes_by_file, kill_process_force};
     use std::thread;
     use std::time::Duration;
@@ -539,66 +549,70 @@ fn remove_with_retry(file: &FileInfo) -> Result<()> {
             Ok(()) => return Ok(()),
             Err(err) => {
                 let io_err = err.downcast_ref::<std::io::Error>();
-                let should_retry = io_err.map_or(false, |e| is_retryable_error(e));
+                let should_retry = io_err.is_some_and(is_retryable_error);
 
                 if !should_retry || attempt == RETRY_MAX_ATTEMPTS {
                     return Err(err.context(format!(
-                        "删除失败（重试 {} 次后）: {}",
+                        "Deletion failed (after {} retries): {}",
                         attempt, file.path.display()
                     )));
                 }
 
-                // 重试前：重新检测占用进程并尝试终止
-                if let Ok(pids) = find_processes_by_file(&file.path) {
-                    for pid in pids {
-                        let _ = kill_process_force(pid);
+                eprintln!(
+                    "  Retrying ({}/{})... file may be in use: {}",
+                    attempt + 1,
+                    RETRY_MAX_ATTEMPTS,
+                    file.path.display()
+                );
+
+                if anyway {
+                    if let Ok(pids) = find_processes_by_file(&file.path) {
+                        for pid in pids {
+                            let _ = kill_process_force(pid);
+                        }
                     }
                 }
 
-                // 指数退避等待
                 thread::sleep(Duration::from_millis(wait_ms));
                 wait_ms = (wait_ms * 2).min(RETRY_MAX_WAIT_MS);
             }
         }
     }
 
-    Err(anyhow::anyhow!(
-        "删除失败（重试耗尽）: {}",
-        file.path.display()
-    ))
+    unreachable!()
 }
 
 #[cfg(not(target_os = "windows"))]
-fn remove_with_retry(file: &FileInfo) -> Result<()> {
+fn remove_with_retry(file: &FileInfo, _anyway: bool) -> Result<()> {
     remove_entry(file)
 }
 
 fn remove_entry(file: &FileInfo) -> Result<()> {
-    // 在 Windows 上，处理符号链接需要特殊处理
+    // On Windows, symlinks require special handling
     #[cfg(target_os = "windows")]
     {
         if file.is_symlink {
-            // 对于符号链接，始终使用 remove_file
-            // 这会删除链接本身，而不是目标
+            // For symlinks, always use remove_file
+            // This deletes the link itself, not the target
             match fs::remove_file(&file.path) {
                 Ok(_) => return Ok(()),
                 Err(e) => {
-                    // 如果失败，尝试使用 Windows 特定的方法
+                    // If it fails, try Windows-specific methods
                     if e.kind() == std::io::ErrorKind::PermissionDenied {
-                        // 尝试获取文件属性并移除只读属性
+                        // Try to get file attributes and remove read-only
                         if let Ok(metadata) = file.path.metadata() {
                             #[allow(clippy::permissions_set_readonly_false)]
                             {
                                 let mut attrs = metadata.permissions();
                                 attrs.set_readonly(false);
                                 if let Err(_) = fs::set_permissions(&file.path, attrs) {
-                                    // 如果无法修改权限，继续尝试删除
+                                    // If unable to modify permissions, continue trying to delete
                                 }
                             }
                         }
-                        // 再次尝试删除
+                        // Try deleting again
                         return fs::remove_file(&file.path)
-                            .with_context(|| format!("无法删除符号链接: {}", file.path.display()));
+                            .with_context(|| format!("Failed to delete symlink: {}", file.path.display()));
                     }
                     return Err(e.into());
                 }
@@ -606,22 +620,22 @@ fn remove_entry(file: &FileInfo) -> Result<()> {
         }
     }
 
-    // 非符号链接的常规处理
+    // Regular handling for non-symlinks
     let result = if file.is_symlink {
         fs::remove_file(&file.path)
     } else if file.is_dir {
-        // 对于目录，先尝试 remove_dir（空目录）
+        // For directories, try remove_dir first (empty directory)
         match fs::remove_dir(&file.path) {
             Ok(_) => Ok(()),
             Err(e) => {
-                // 如果是权限错误，尝试修改权限后再删除
+                // If it's a permission error, try modifying permissions then delete
                 if e.kind() == std::io::ErrorKind::PermissionDenied {
-                    // 递归修改目录及其内容的权限
+                    // Recursively modify permissions of directory and its contents
                     #[cfg(target_os = "windows")]
                     if let Err(_) = remove_readonly_recursively(&file.path) {
-                        // 如果无法修改权限，继续尝试删除
+                        // If unable to modify permissions, continue trying to delete
                     }
-                    // 再次尝试删除
+                    // Try deleting again
                     fs::remove_dir_all(&file.path)
                 } else {
                     Err(e)
@@ -632,10 +646,10 @@ fn remove_entry(file: &FileInfo) -> Result<()> {
         fs::remove_file(&file.path)
     };
 
-    result.with_context(|| format!("删除失败: {}", file.path.display()))
+    result.with_context(|| format!("Deletion failed: {}", file.path.display()))
 }
 
-/// 格式化文件大小
+/// Format file size
 pub fn format_size(size: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
     let mut size = size as f64;

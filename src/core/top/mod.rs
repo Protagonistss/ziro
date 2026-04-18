@@ -1,7 +1,6 @@
-use crate::platform::term::TerminalProfile;
-use crate::platform::term::{
-    self, is_powershell_core, is_windows_powershell_legacy, is_windows_terminal_or_conemu,
-};
+use crate::platform::term::{self, TerminalProfile};
+#[cfg(target_os = "windows")]
+use crate::platform::term::{is_powershell_core, is_windows_powershell_legacy, is_windows_terminal_or_conemu};
 use crate::ui;
 use crate::ui::TopRenderOptions;
 use anyhow::Result;

@@ -120,6 +120,24 @@ fn is_directory_locked(path: &Path) -> bool {
     }
 }
 
+/// Non-Windows: check if a directory is locked
+#[cfg(not(target_os = "windows"))]
+fn is_directory_locked(path: &Path) -> bool {
+    match std::fs::read_dir(path) {
+        Ok(_) => false,
+        Err(e) => match e.kind() {
+            std::io::ErrorKind::PermissionDenied => {
+                eprintln!("Warning: directory access denied, may be locked: {}", path.display());
+                true
+            }
+            _ => {
+                eprintln!("Warning: directory read failed: {} - {}", path.display(), e);
+                true
+            }
+        },
+    }
+}
+
 /// Escape path as PowerShell single-quoted string (' → '')
 #[cfg(target_os = "windows")]
 fn ps_escape(s: &str) -> String {
@@ -164,12 +182,6 @@ fn check_file_locking_status(path: &Path) -> bool {
             }
         },
     }
-}
-
-/// No-op implementation for non-Windows systems
-#[cfg(not(target_os = "windows"))]
-fn is_directory_locked(_path: &Path) -> bool {
-    false
 }
 
 /// No-op implementation for non-Windows systems

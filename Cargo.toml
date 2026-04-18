@@ -37,3 +37,10 @@ windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32
 collapsible_if = "allow"
 redundant_pattern_matching = "allow"
 needless_return = "allow"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+panic = "abort"
+codegen-units = 1

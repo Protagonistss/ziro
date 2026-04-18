@@ -19,7 +19,7 @@ pub fn display_version() {
 
 pub fn handle_find(ports: Vec<u16>) -> Result<()> {
     if ports.is_empty() {
-        println!("请至少指定一个端口号");
+        println!("Please specify at least one port number");
         return Ok(());
     }
 
@@ -30,14 +30,14 @@ pub fn handle_find(ports: Vec<u16>) -> Result<()> {
 
 pub fn handle_kill(ports: Vec<u16>, force: bool) -> Result<()> {
     if ports.is_empty() {
-        println!("请至少指定一个端口号");
+        println!("Please specify at least one port number");
         return Ok(());
     }
 
     let port_infos = port::find_processes_by_ports(&ports)?;
 
     if port_infos.is_empty() {
-        println!("未找到占用指定端口的进程");
+        println!("No processes found occupying the specified ports");
         for &port in &ports {
             ui::display_port_not_found(port);
         }
@@ -69,6 +69,18 @@ pub fn handle_list() -> Result<()> {
     Ok(())
 }
 
+pub fn handle_who(paths: Vec<std::path::PathBuf>) -> Result<()> {
+    if paths.is_empty() {
+        println!("Please specify at least one file or directory path");
+        return Ok(());
+    }
+
+    fs_ops::validate_paths(&paths)?;
+    let infos = process::inspect_file_locks(&paths)?;
+    ui::display_file_locks(&infos);
+    Ok(())
+}
+
 pub fn handle_top(interval: f32, limit: usize, cpu: bool, cmd: bool, once: bool) -> Result<()> {
     let opts = top::TopOptions {
         interval,
@@ -89,7 +101,7 @@ pub fn handle_remove(
     anyway: bool,
 ) -> Result<()> {
     if paths.is_empty() {
-        println!("请至少指定一个文件或目录路径");
+        println!("Please specify at least one file or directory path");
         return Ok(());
     }
 
@@ -97,12 +109,18 @@ pub fn handle_remove(
     let files = fs_ops::collect_files_to_remove(&paths, recursive)?;
 
     if files.is_empty() {
-        println!("没有匹配的文件或目录");
+        println!("No matching files or directories found");
         return Ok(());
     }
 
     if !ui::confirm_deletion(&files, force || anyway, dry_run)? {
-        println!("{}", "操作已取消".bright_yellow());
+        println!("{}", "Operation cancelled".bright_yellow());
+        return Ok(());
+    }
+
+    // Check file locks and warn user
+    if !ui::check_and_warn_file_locks(&files, anyway)? {
+        println!("{}", "Operation cancelled".bright_yellow());
         return Ok(());
     }
 

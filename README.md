@@ -41,6 +41,9 @@ ziro kill 8080
 
 # List all ports
 ziro list
+
+# Check file/directory lock
+ziro who C:\path\file.txt
 ```
 
 ---

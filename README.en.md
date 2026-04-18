@@ -99,6 +99,18 @@ Current port occupancy:
 ╰──────┴───────┴──────────┴─────────────────────────┴───────┴────────╯
 ```
 
+### Check File/Directory Lock
+
+```bash
+# Check a single file
+ziro who C:\path\file.txt
+
+# Check multiple paths
+ziro who .\logs .\data\app.db
+```
+
+The output reports whether the path is locked and shows related processes when available.
+
 ## Command Reference
 
 ```
@@ -111,6 +123,7 @@ Commands:
   find <PORT>          Find process occupying specified port
   kill <PORT>...       Kill processes occupying specified ports (multiple allowed)
   list                 List all port occupancy
+  who <PATH>...        Check processes occupying a file or directory
   help                 Show help information
 
 Options:

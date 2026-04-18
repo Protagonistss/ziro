@@ -1,5 +1,7 @@
-use crate::platform::term;
 use crate::platform::term::TerminalProfile;
+use crate::platform::term::{
+    self, is_powershell_core, is_windows_powershell_legacy, is_windows_terminal_or_conemu,
+};
 use crate::ui;
 use crate::ui::TopRenderOptions;
 use anyhow::Result;
@@ -8,38 +10,38 @@ use std::thread;
 use std::time::{Duration, Instant};
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 
-/// 检查是否应该使用备用屏幕（改进版本）
+/// Check whether alternate screen should be used (improved version)
 fn should_use_alt_screen(profile: &TerminalProfile) -> bool {
     if !profile.alt_screen {
         return false;
     }
 
-    // 使用改进的终端检测逻辑
+    // Use improved terminal detection logic
     #[cfg(target_os = "windows")]
     {
-        // Windows Terminal 明确支持备用屏幕
+        // Windows Terminal explicitly supports alternate screen
         if std::env::var("WT_SESSION").is_ok() {
             return true;
         }
 
-        // VSCode 终端支持备用屏幕
+        // VSCode terminal supports alternate screen
         if let Ok(term_program) = std::env::var("TERM_PROGRAM") {
             if term_program.to_lowercase().contains("vscode") {
                 return true;
             }
         }
 
-        // ConEmu 和其他有 ANSI 支持的现代终端
+        // ConEmu and other modern terminals with ANSI support
         if std::env::var("ConEmuANSI").is_ok() || std::env::var("ANSICON").is_ok() {
             return true;
         }
 
-        // PowerShell Core 通常支持备用屏幕
+        // PowerShell Core usually supports alternate screen
         if is_powershell_core() {
             return true;
         }
 
-        // 直接检测 Warp 终端和其他现代终端
+        // Directly detect Warp terminal and other modern terminals
         if let Ok(term_program) = std::env::var("TERM_PROGRAM") {
             let term_program = term_program.to_lowercase();
             if term_program.contains("warp") || term_program.contains("warpterminal") {
@@ -47,7 +49,7 @@ fn should_use_alt_screen(profile: &TerminalProfile) -> bool {
             }
         }
 
-        // TERM 变量检测 - 支持 xterm-256color 等现代终端
+        // TERM variable detection - support xterm-256color and other modern terminals
         if let Ok(term) = std::env::var("TERM") {
             let term = term.to_lowercase();
             if term.contains("xterm-256color")
@@ -58,108 +60,47 @@ fn should_use_alt_screen(profile: &TerminalProfile) -> bool {
             }
         }
 
-        // Windows PowerShell 5.1 只在特定环境下支持备用屏幕
+        // Windows PowerShell 5.1 only supports alternate screen in specific environments
         if is_windows_powershell_legacy() {
-            // 只有在 Windows Terminal 或 ConEmu 中才使用备用屏幕
+            // Only use alternate screen in Windows Terminal or ConEmu
             return is_windows_terminal_or_conemu();
         }
 
-        // 其他情况默认不使用备用屏幕，避免问题
+        // Default: don't use alternate screen to avoid issues
         false
     }
 
-    // 非 Windows 系统通常支持备用屏幕
+    // Non-Windows systems usually support alternate screen
     #[cfg(not(target_os = "windows"))]
     true
 }
 
-/// 检测是否为 PowerShell Core (6+)
-#[cfg(target_os = "windows")]
-fn is_powershell_core() -> bool {
-    std::env::var("PSVersionTable").is_ok()
-}
-
-/// 检测是否为 Windows PowerShell (5.1 及以下)
-#[cfg(target_os = "windows")]
-fn is_windows_powershell_legacy() -> bool {
-    std::env::var("PSModulePath").is_ok()
-        && std::env::var("PSVersionTable").is_err()
-        && (std::env::var("PSHOME").is_ok() || std::env::var("PSExecutionPolicyPreference").is_ok())
-}
-
-/// 检测是否在支持备用屏幕的现代终端中运行
-#[cfg(target_os = "windows")]
-fn is_windows_terminal_or_conemu() -> bool {
-    // Windows Terminal
-    if std::env::var("WT_SESSION").is_ok() {
-        return true;
-    }
-
-    // ConEmu with ANSI
-    if std::env::var("ConEmuANSI").is_ok() {
-        return true;
-    }
-
-    // ANSICON
-    if std::env::var("ANSICON").is_ok() {
-        return true;
-    }
-
-    // 各种现代终端的 TERM_PROGRAM 检测
-    if let Ok(term_program) = std::env::var("TERM_PROGRAM") {
-        let term_program = term_program.to_lowercase();
-        if term_program.contains("vscode")
-            || term_program.contains("warp")
-            || term_program.contains("hyper")
-            || term_program.contains("terminus")
-        {
-            return true;
-        }
-    }
-
-    // TERM 变量检测 - 支持很多 Unix-like 终端模拟器
-    if let Ok(term) = std::env::var("TERM") {
-        let term = term.to_lowercase();
-        if term.contains("xterm")
-            || term.contains("screen")
-            || term.contains("tmux")
-            || term.contains("256color")
-            || term.contains("alacritty")
-            || term.contains("kitty")
-        {
-            return true;
-        }
-    }
-
-    false
-}
-
-/// 安全地进入备用屏幕
+/// Safely enter alternate screen
 fn enter_alternate_screen() {
-    // 先清除屏幕并移动到顶部
+    // Clear screen and move to top first
     print!("\x1b[2J\x1b[H");
 
-    // 尝试进入备用屏幕
+    // Try to enter alternate screen
     print!("\x1b[?1049h");
 
-    // 隐藏光标
+    // Hide cursor
     print!("\x1b[?25l");
 
     let _ = io::stdout().flush();
 }
 
-/// 安全地退出备用屏幕
+/// Safely exit alternate screen
 fn exit_alternate_screen() {
-    // 显示光标
+    // Show cursor
     print!("\x1b[?25h");
 
-    // 退出备用屏幕
+    // Exit alternate screen
     print!("\x1b[?1049l");
 
     let _ = io::stdout().flush();
 }
 
-/// top 子命令的配置
+/// Top subcommand options
 pub struct TopOptions {
     pub interval: f32,
     pub limit: usize,
@@ -168,7 +109,7 @@ pub struct TopOptions {
     pub once: bool,
 }
 
-/// 用于展示的进程信息
+/// Process info for display
 pub struct ProcessView {
     pub pid: u32,
     pub name: String,
@@ -182,12 +123,12 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
     let process_refresh = ProcessRefreshKind::everything();
     let mut system = System::new_with_specifics(RefreshKind::new().with_processes(process_refresh));
 
-    // 根据终端能力决定是否使用备用屏幕 / 增量刷新，避免在不支持的控制台显示乱码
+    // Decide whether to use alternate screen / incremental refresh based on terminal capabilities
     let profile = term::global_profile();
     let use_alt_screen = !opts.once && should_use_alt_screen(&profile);
     let incremental = !opts.once && profile.incremental;
 
-    // 进入备用屏幕，避免污染滚动历史（once 模式不需要）
+    // Enter alternate screen to avoid polluting scroll history (not needed for once mode)
     if use_alt_screen {
         enter_alternate_screen();
     }
@@ -195,11 +136,11 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
     let mut tick: u64 = 0;
     let mut last_frame: Vec<String> = Vec::new();
 
-    // 初始刷新以建立基准 CPU 使用率
+    // Initial refresh to establish baseline CPU usage
     system.refresh_processes_specifics(ProcessesToUpdate::All, process_refresh);
     system.refresh_memory();
 
-    // 为更好的 CPU 使用率计算，等待一小段时间
+    // Wait a short time for better CPU usage calculation
     if !opts.once {
         thread::sleep(Duration::from_millis(100));
     }
@@ -208,7 +149,7 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
         tick = tick.wrapping_add(1);
         let start = Instant::now();
 
-        // 使用更智能的刷新策略
+        // Use smarter refresh strategy
         system.refresh_processes_specifics(ProcessesToUpdate::All, process_refresh);
         system.refresh_memory();
 
@@ -233,7 +174,7 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
                     0.0
                 };
 
-                // CPU 使用率计算 - 使用更稳定的值
+                // CPU usage calculation - use more stable values
                 let cpu_usage = process.cpu_usage();
 
                 ProcessView {
@@ -247,7 +188,7 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
             })
             .collect();
 
-        // 按内存使用率排序，但考虑 CPU 使用率的权重
+        // Sort by memory usage, but factor in CPU usage weight
         if opts.show_cpu {
             processes.sort_by(|a, b| {
                 let score_a = a.memory_bytes as f64 * 0.7 + a.cpu as f64 * 1000.0 * 0.3;
@@ -278,7 +219,7 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
             break;
         }
 
-        // 更精确的刷新时间控制
+        // More precise refresh timing control
         let elapsed = start.elapsed();
         let target_duration = Duration::from_secs_f32(opts.interval);
 
@@ -288,7 +229,7 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
         }
     }
 
-    // 离开备用屏幕，恢复原屏幕内容
+    // Leave alternate screen and restore original screen content
     if use_alt_screen {
         exit_alternate_screen();
     }

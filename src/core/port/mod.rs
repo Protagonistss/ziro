@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 use sysinfo::{ProcessRefreshKind, RefreshKind, System};
 
-/// 进程信息
+/// Process information
 #[derive(Debug, Clone)]
 pub struct ProcessInfo {
     pub pid: u32,
@@ -12,14 +12,31 @@ pub struct ProcessInfo {
     pub memory: u64,
 }
 
-/// 端口占用信息
+impl ProcessInfo {
+    /// Create ProcessInfo from a sysinfo::Process
+    fn from_sysinfo(pid: u32, process: &sysinfo::Process) -> Self {
+        ProcessInfo {
+            pid,
+            name: process.name().to_string_lossy().to_string(),
+            cmd: process
+                .cmd()
+                .iter()
+                .map(|s| s.to_string_lossy().to_string())
+                .collect(),
+            cpu_usage: process.cpu_usage(),
+            memory: process.memory(),
+        }
+    }
+}
+
+/// Port usage information
 #[derive(Debug, Clone)]
 pub struct PortInfo {
     pub port: u16,
     pub process: ProcessInfo,
 }
 
-/// 查找占用多个端口的进程
+/// Find processes occupying multiple ports
 pub fn find_processes_by_ports(ports: &[u16]) -> Result<Vec<PortInfo>> {
     let connections = get_network_connections()?;
     let mut sys = System::new_with_specifics(
@@ -33,17 +50,7 @@ pub fn find_processes_by_ports(ports: &[u16]) -> Result<Vec<PortInfo>> {
         if let Some(&pid) = connections.get(&port)
             && let Some(process) = sys.process(sysinfo::Pid::from_u32(pid))
         {
-            let process_info = ProcessInfo {
-                pid,
-                name: process.name().to_string_lossy().to_string(),
-                cmd: process
-                    .cmd()
-                    .iter()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .collect(),
-                cpu_usage: process.cpu_usage(),
-                memory: process.memory(),
-            };
+            let process_info = ProcessInfo::from_sysinfo(pid, process);
             result.push(PortInfo {
                 port,
                 process: process_info,
@@ -54,7 +61,7 @@ pub fn find_processes_by_ports(ports: &[u16]) -> Result<Vec<PortInfo>> {
     Ok(result)
 }
 
-/// 列出所有端口占用情况
+/// List all port usage
 pub fn list_all_ports() -> Result<Vec<PortInfo>> {
     let connections = get_network_connections()?;
     let mut sys = System::new_with_specifics(
@@ -66,17 +73,7 @@ pub fn list_all_ports() -> Result<Vec<PortInfo>> {
 
     for (port, pid) in connections {
         if let Some(process) = sys.process(sysinfo::Pid::from_u32(pid)) {
-            let process_info = ProcessInfo {
-                pid,
-                name: process.name().to_string_lossy().to_string(),
-                cmd: process
-                    .cmd()
-                    .iter()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .collect(),
-                cpu_usage: process.cpu_usage(),
-                memory: process.memory(),
-            };
+            let process_info = ProcessInfo::from_sysinfo(pid, process);
             result.push(PortInfo {
                 port,
                 process: process_info,
@@ -84,35 +81,35 @@ pub fn list_all_ports() -> Result<Vec<PortInfo>> {
         }
     }
 
-    // 按端口号排序
+    // Sort by port number
     result.sort_by_key(|info| info.port);
 
     Ok(result)
 }
 
-/// 获取网络连接信息（端口 -> PID 映射）
+/// Get network connection information (port -> PID mapping)
 #[cfg(target_os = "windows")]
 fn get_network_connections() -> Result<HashMap<u16, u32>> {
     use std::process::Command;
 
     let output = Command::new("netstat").args(["-ano"]).output()?;
 
-    // 使用更简单的字符串处理，避免编码转换问题
+    // Use simple string processing to avoid encoding conversion issues
     let connections = parse_netstat_output(&output.stdout)?;
 
     Ok(connections)
 }
 
-/// 解析 netstat 输出，提取端口和PID映射
+/// Parse netstat output, extract port-to-PID mapping
 #[cfg(target_os = "windows")]
 fn parse_netstat_output(stdout: &[u8]) -> Result<HashMap<u16, u32>> {
     let mut connections = HashMap::new();
 
-    // 直接使用 lossy 转换，避免复杂的编码检测
+    // Use lossy conversion directly to avoid complex encoding detection
     let text = String::from_utf8_lossy(stdout);
 
     for line in text.lines() {
-        // 跳过标题行和空行
+        // Skip header lines and empty lines
         if line.trim().is_empty()
             || line.contains("Active")
             || line.contains("Proto")
@@ -123,10 +120,10 @@ fn parse_netstat_output(stdout: &[u8]) -> Result<HashMap<u16, u32>> {
 
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 5 {
-            // 查找最后一个数字作为PID
+            // Use the last number as PID
             if let Some(pid_str) = parts.last() {
                 if let Ok(pid) = pid_str.parse::<u32>() {
-                    // 查找本地地址和端口（通常是第二个元素）
+                    // Extract local address and port (usually the second element)
                     if let Some(local_addr) = parts.get(1) {
                         if let Some(port_str) = local_addr.rsplit(':').next() {
                             if let Ok(port) = port_str.parse::<u16>() {
@@ -148,14 +145,14 @@ fn get_network_connections() -> Result<HashMap<u16, u32>> {
 
     let mut connections = HashMap::new();
 
-    // 读取 TCP 连接
+    // Read TCP connections
     for path in &["/proc/net/tcp", "/proc/net/tcp6"] {
         if let Ok(content) = fs::read_to_string(path) {
             parse_proc_net(&content, &mut connections)?;
         }
     }
 
-    // 读取 UDP 连接
+    // Read UDP connections
     for path in &["/proc/net/udp", "/proc/net/udp6"] {
         if let Ok(content) = fs::read_to_string(path) {
             parse_proc_net(&content, &mut connections)?;
@@ -170,14 +167,14 @@ fn parse_proc_net(content: &str, connections: &mut HashMap<u16, u32>) -> Result<
     for line in content.lines().skip(1) {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 10 {
-            // 解析本地地址（格式：0100007F:1F90 表示 127.0.0.1:8080）
+            // Parse local address (format: 0100007F:1F90 represents 127.0.0.1:8080)
             if let Some(local_addr) = parts.get(1) {
                 if let Some(port_hex) = local_addr.split(':').nth(1) {
                     if let Ok(port) = u16::from_str_radix(port_hex, 16) {
-                        // 解析 inode
+                        // Parse inode
                         if let Some(inode_str) = parts.get(9) {
                             if let Ok(inode) = inode_str.parse::<u64>() {
-                                // 通过 inode 查找 PID
+                                // Find PID by inode
                                 if let Ok(pid) = find_pid_by_inode(inode) {
                                     connections.insert(port, pid);
                                 }
@@ -218,7 +215,7 @@ fn find_pid_by_inode(inode: u64) -> Result<u32> {
     }
 
     Err(anyhow::Error::msg(format!(
-        "未找到 inode {inode} 对应的 PID"
+        "No PID found for inode {inode}"
     )))
 }
 
@@ -228,18 +225,18 @@ fn get_network_connections() -> Result<HashMap<u16, u32>> {
 
     let output = Command::new("lsof").args(["-i", "-n", "-P"]).output()?;
 
-    // 使用更简单的字符串处理，避免编码转换问题
+    // Use simple string processing to avoid encoding conversion issues
     let connections = parse_lsof_output(&output.stdout)?;
 
     Ok(connections)
 }
 
-/// 解析 lsof 输出，提取端口和PID映射
+/// Parse lsof output, extract port-to-PID mapping
 #[cfg(target_os = "macos")]
 fn parse_lsof_output(stdout: &[u8]) -> Result<HashMap<u16, u32>> {
     let mut connections = HashMap::new();
 
-    // 直接使用 lossy 转换，避免复杂的编码检测
+    // Use lossy conversion directly to avoid complex encoding detection
     let text = String::from_utf8_lossy(stdout);
 
     for line in text.lines().skip(1) {
@@ -249,9 +246,9 @@ fn parse_lsof_output(stdout: &[u8]) -> Result<HashMap<u16, u32>> {
             // node    12345   user   21u  IPv4   0x...      0t0  TCP *:8080 (LISTEN)
             if let Ok(pid) = parts[1].parse::<u32>() {
                 if let Some(name) = parts.get(8) {
-                    // 解析端口（格式：*:8080 或 127.0.0.1:8080）
+                    // Parse port (format: *:8080 or 127.0.0.1:8080)
                     if let Some(port_str) = name.rsplit(':').next() {
-                        // 移除可能的状态信息，如 (LISTEN)
+                        // Remove possible status info such as (LISTEN)
                         let port_str = port_str.split('(').next().unwrap_or(port_str).trim();
                         if let Ok(port) = port_str.parse::<u16>() {
                             connections.insert(port, pid);
@@ -267,5 +264,5 @@ fn parse_lsof_output(stdout: &[u8]) -> Result<HashMap<u16, u32>> {
 
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 fn get_network_connections() -> Result<HashMap<u16, u32>> {
-    Err(anyhow::Error::msg("当前操作系统不支持网络连接查询"))
+    Err(anyhow::Error::msg("Network connection queries are not supported on the current operating system"))
 }

@@ -1,5 +1,6 @@
 use crate::core::fs_ops::FileInfo;
 use crate::core::port::PortInfo;
+use crate::core::process::FileLockInfo;
 use crate::core::top::ProcessView;
 use crate::ui::Theme;
 use anyhow::Result;
@@ -7,18 +8,18 @@ use console::{Alignment, pad_str};
 use inquire::{Confirm, MultiSelect};
 use std::io::{self, Write};
 
-/// 显示端口未被占用的消息
+/// Display message for port not in use
 pub fn display_port_not_found(port: u16) {
     let theme = Theme::new();
-    println!("{}", theme.warn(format!("端口 {port} 未被占用")));
+    println!("{}", theme.warn(format!("Port {port} is not in use")));
 }
 
-/// 显示多个端口信息（交互式选择）
+/// Display multiple port info with interactive selection
 pub fn select_processes_to_kill(port_infos: Vec<PortInfo>) -> Result<Vec<PortInfo>> {
     let theme = Theme::new();
 
     if port_infos.is_empty() {
-        println!("{}", theme.warn("未找到任何占用指定端口的进程"));
+        println!("{}", theme.warn("No processes found occupying the specified ports"));
         return Ok(vec![]);
     }
 
@@ -26,7 +27,7 @@ pub fn select_processes_to_kill(port_infos: Vec<PortInfo>) -> Result<Vec<PortInf
         .iter()
         .map(|info| {
             format!(
-                "端口 {} - {} (PID: {}) - {}",
+                "Port {} - {} (PID: {}) - {}",
                 info.port,
                 info.process.name,
                 info.process.pid,
@@ -35,19 +36,19 @@ pub fn select_processes_to_kill(port_infos: Vec<PortInfo>) -> Result<Vec<PortInf
         })
         .collect();
 
-    // 默认全选（使用索引数组）
+    // Default: select all (using index array)
     let defaults: Vec<usize> = (0..options.len()).collect();
 
-    let selected = MultiSelect::new("选择要终止的进程：", options)
+    let selected = MultiSelect::new("Select processes to kill:", options)
         .with_default(&defaults)
         .prompt()?;
 
-    // 找出被选中的进程
+    // Find selected processes
     let mut result = Vec::new();
     for selection in selected {
         for info in &port_infos {
             let expected = format!(
-                "端口 {} - {} (PID: {}) - {}",
+                "Port {} - {} (PID: {}) - {}",
                 info.port,
                 info.process.name,
                 info.process.pid,
@@ -61,24 +62,24 @@ pub fn select_processes_to_kill(port_infos: Vec<PortInfo>) -> Result<Vec<PortInf
     }
 
     if result.is_empty() {
-        println!("{}", theme.warn("未选择任何进程"));
+        println!("{}", theme.warn("No processes selected"));
         return Ok(vec![]);
     }
 
-    // 确认操作
-    let confirm = Confirm::new("确认终止这些进程？")
+    // Confirm operation
+    let confirm = Confirm::new("Confirm killing these processes?")
         .with_default(false)
         .prompt()?;
 
     if confirm {
         Ok(result)
     } else {
-        println!("{}", theme.warn("操作已取消"));
+        println!("{}", theme.warn("Operation cancelled"));
         Ok(vec![])
     }
 }
 
-/// 显示终止结果
+/// Display kill results
 pub fn display_kill_results(results: &[(u32, Result<()>)]) {
     let theme = Theme::new();
 
@@ -87,19 +88,19 @@ pub fn display_kill_results(results: &[(u32, Result<()>)]) {
             Ok(()) => println!(
                 "{} {}",
                 theme.icon_success(),
-                theme.success(format!("成功终止进程 {pid}"))
+                theme.success(format!("Successfully killed process {pid}"))
             ),
             Err(e) => println!(
                 "{} {}: {}",
                 theme.icon_error(),
-                theme.error(format!("无法终止进程 {pid}")),
+                theme.error(format!("Failed to kill process {pid}")),
                 e
             ),
         }
     }
 }
 
-/// 截断字符串到指定长度
+/// Truncate string to specified length
 fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
@@ -108,13 +109,13 @@ fn truncate_string(s: &str, max_len: usize) -> String {
     }
 }
 
-/// 显示错误信息
+/// Display error message
 pub fn display_error(error: &anyhow::Error) {
     let theme = Theme::new();
-    eprintln!("{} {}", theme.error_bold("错误:"), error);
+    eprintln!("{} {}", theme.error_bold("Error:"), error);
 }
 
-/// 树形结构展示多个端口信息
+/// Display multiple port info in tree structure
 pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
     if ports.is_empty() {
         return;
@@ -122,10 +123,10 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
 
     let theme = Theme::new();
 
-    println!("{} {}", theme.icon_lightning(), theme.title("端口查询结果"));
+    println!("{} {}", theme.icon_lightning(), theme.title("Port Query Results"));
     println!();
 
-    // 创建端口到进程信息的映射
+    // Build port to process info mapping
     let mut port_map = std::collections::HashMap::new();
     for info in port_infos {
         port_map.insert(info.port, info);
@@ -138,7 +139,7 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
         let continuation = if is_last { "   " } else { "│  " };
 
         if let Some(info) = port_map.get(&port) {
-            // 端口被占用
+            // Port in use
             println!(
                 "{} {} {}",
                 branch,
@@ -146,40 +147,40 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
                 theme.icon_success()
             );
 
-            // 进程信息
+            // Process info
             println!(
                 "{}├─ {}: {} ({})",
                 continuation,
-                theme.info("进程"),
+                theme.info("Process"),
                 theme.success(&info.process.name),
                 theme.muted(info.process.pid.to_string())
             );
 
-            // 命令
+            // Command
             let cmd = truncate_string(&info.process.cmd.join(" "), 60);
             println!(
                 "{}├─ {}: {}",
                 continuation,
-                theme.info("命令"),
+                theme.info("Command"),
                 theme.muted(cmd)
             );
 
-            // 资源使用
+            // Resource usage
             println!(
-                "{}└─ {}: {} CPU, {} 内存",
+                "{}└─ {}: {} CPU, {} Memory",
                 continuation,
-                theme.info("资源"),
+                theme.info("Resources"),
                 theme.accent(format!("{:.1}%", info.process.cpu_usage)),
                 theme.accent(format!("{} MB", info.process.memory / 1024 / 1024))
             );
         } else {
-            // 端口空闲
+            // Port free
             println!(
                 "{} {} {} {}",
                 branch,
                 theme.highlight(port.to_string()),
                 theme.icon_error(),
-                theme.muted("(空闲)")
+                theme.muted("(free)")
             );
         }
 
@@ -189,20 +190,20 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
     }
 }
 
-/// 树形结构展示所有端口占用情况（用于 list 命令）
+/// Display all port usage in tree structure (for list command)
 pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
     let theme = Theme::new();
 
     if port_infos.is_empty() {
-        println!("{}", theme.warn("当前没有端口被占用"));
+        println!("{}", theme.warn("No ports are currently in use"));
         return;
     }
 
     println!(
         "{} {} {}",
         theme.icon_lightning(),
-        theme.title("端口占用情况"),
-        theme.muted(format!("(共 {} 个)", port_infos.len()))
+        theme.title("Port Usage"),
+        theme.muted(format!("({} total)", port_infos.len()))
     );
     println!();
 
@@ -212,7 +213,7 @@ pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
         let branch = if is_last { "└─" } else { "├─" };
         let continuation = if is_last { "   " } else { "│  " };
 
-        // 端口号和状态
+        // Port number and status
         println!(
             "{} {} {}",
             branch,
@@ -220,29 +221,29 @@ pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
             theme.icon_success()
         );
 
-        // 进程信息
+        // Process info
         println!(
             "{}├─ {}: {} ({})",
             continuation,
-            theme.info("进程"),
+            theme.info("Process"),
             theme.success(&info.process.name),
             theme.muted(info.process.pid.to_string())
         );
 
-        // 命令
+        // Command
         let cmd = truncate_string(&info.process.cmd.join(" "), 60);
         println!(
             "{}├─ {}: {}",
             continuation,
-            theme.info("命令"),
+            theme.info("Command"),
             theme.muted(cmd)
         );
 
-        // 资源使用
+        // Resource usage
         println!(
-            "{}└─ {}: {} CPU, {} 内存",
+            "{}└─ {}: {} CPU, {} Memory",
             continuation,
-            theme.info("资源"),
+            theme.info("Resources"),
             theme.accent(format!("{:.1}%", info.process.cpu_usage)),
             theme.accent(format!("{} MB", info.process.memory / 1024 / 1024))
         );
@@ -253,7 +254,81 @@ pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
     }
 }
 
-/// 显示删除预览
+/// Display file/directory lock status
+pub fn display_file_locks(infos: &[FileLockInfo]) {
+    let theme = Theme::new();
+
+    if infos.is_empty() {
+        println!("{}", theme.warn("No paths found to check"));
+        return;
+    }
+
+    println!("{} {}", theme.icon_search(), theme.title("File Lock Query"));
+    println!();
+
+    let total = infos.len();
+    for (index, info) in infos.iter().enumerate() {
+        let is_last = index == total - 1;
+        let branch = if is_last { "└─" } else { "├─" };
+        let continuation = if is_last { "   " } else { "│  " };
+
+        let kind = if info.path.is_dir() {
+            theme.blue("Dir")
+        } else {
+            theme.success("File")
+        };
+
+        let status = if info.locked {
+            theme.error("Locked")
+        } else {
+            theme.success("Free")
+        };
+
+        println!(
+            "{branch} {} {} {}",
+            theme.highlight(info.path.display().to_string()),
+            kind,
+            status
+        );
+
+        if info.processes.is_empty() {
+            if info.locked {
+                println!(
+                    "{continuation}└─ {}",
+                    theme.warn("No locking process found, may need admin privileges or handle.exe")
+                );
+            }
+        } else {
+            let proc_total = info.processes.len();
+            for (proc_index, proc_info) in info.processes.iter().enumerate() {
+                let proc_last = proc_index == proc_total - 1;
+                let proc_branch = if proc_last { "└─" } else { "├─" };
+                let proc_continuation = if proc_last { "   " } else { "│  " };
+
+                println!(
+                    "{continuation}{proc_branch} {} {} ({})",
+                    theme.info("Process"),
+                    theme.success(&proc_info.name),
+                    theme.muted(format!("PID: {}", proc_info.pid))
+                );
+
+                if !proc_info.cmd.is_empty() {
+                    println!(
+                        "{continuation}{proc_continuation} {} {}",
+                        theme.info("Command"),
+                        theme.muted(truncate_string(&proc_info.cmd, 80))
+                    );
+                }
+            }
+        }
+
+        if !is_last {
+            println!("{continuation}");
+        }
+    }
+}
+
+/// Display deletion preview
 pub fn display_deletion_preview(files: &[FileInfo]) {
     let theme = Theme::new();
     let total_size: u64 = files.iter().map(|f| f.size).sum();
@@ -267,18 +342,18 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
 
     println!(
         "{} {} {} {}",
-        theme.title("统计:"),
-        theme.success(format!("{file_count} 个文件")),
-        theme.blue(format!("{dir_count} 个目录")),
+        theme.title("Summary:"),
+        theme.success(format!("{file_count} files")),
+        theme.blue(format!("{dir_count} directories")),
         theme.warn(format!(
-            "总大小: {}",
+            "Total size: {}",
             crate::core::fs_ops::format_size(total_size)
         ))
     );
     println!();
 
-    // 显示文件列表预览
-    let total = files.len().min(10); // 最多显示10个项目
+    // Display file list preview
+    let total = files.len().min(10);
     for file in files.iter().take(total) {
         let icon = if file.is_dir {
             theme.icon_folder()
@@ -296,11 +371,11 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
         };
 
         let file_type = if file.is_dir {
-            theme.blue("目录")
+            theme.blue("Dir")
         } else if file.is_symlink {
-            theme.accent("符号链接")
+            theme.accent("Symlink")
         } else {
-            theme.success("文件")
+            theme.success("File")
         };
 
         println!(
@@ -315,14 +390,14 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
     if files.len() > 10 {
         println!(
             "{}",
-            theme.muted(format!("  ... 还有 {} 个项目", files.len() - 10))
+            theme.muted(format!("  ... {} more items", files.len() - 10))
         );
     }
 
     println!();
 }
 
-/// 确认删除操作
+/// Confirm deletion operation
 pub fn confirm_deletion(files: &[FileInfo], skip_confirm: bool, dry_run: bool) -> Result<bool> {
     let theme = Theme::new();
 
@@ -330,7 +405,7 @@ pub fn confirm_deletion(files: &[FileInfo], skip_confirm: bool, dry_run: bool) -
         println!(
             "{} {}",
             theme.icon_search(),
-            theme.info_bold("预览模式 - 不会实际删除文件")
+            theme.info_bold("Preview mode - no files will be deleted")
         );
         display_deletion_preview(files);
         return Ok(true);
@@ -343,26 +418,141 @@ pub fn confirm_deletion(files: &[FileInfo], skip_confirm: bool, dry_run: bool) -
     println!(
         "{} {}",
         theme.icon_warning(),
-        theme.error_bold("即将删除以下内容")
+        theme.error_bold("About to delete the following")
     );
     display_deletion_preview(files);
 
-    let confirm = Confirm::new("确认删除这些内容？此操作不可撤销！")
+    let confirm = Confirm::new("Confirm deleting these items? This cannot be undone!")
         .with_default(false)
-        .with_help_message("使用 --force 参数可以跳过此确认")
+        .with_help_message("Use --force to skip this confirmation")
         .prompt()?;
 
     Ok(confirm)
 }
 
-/// 显示删除结果
+/// Check file locks and handle them
+///
+/// - Default: show lock info and ask user whether to continue
+/// - `--anyway`: auto-kill locking processes, then continue
+///
+/// Returns true to proceed with deletion, false to cancel
+pub fn check_and_warn_file_locks(files: &[FileInfo], anyway: bool) -> Result<bool> {
+    use crate::core::process::{inspect_file_locks, kill_processes_force};
+    use std::path::PathBuf;
+
+    let theme = Theme::new();
+
+    // Extract all file paths
+    let paths: Vec<PathBuf> = files.iter().map(|f| f.path.clone()).collect();
+
+    // Check file locks
+    let lock_infos = match inspect_file_locks(&paths) {
+        Ok(infos) => infos,
+        Err(e) => {
+            // Check failed: warn but allow to continue
+            eprintln!(
+                "{} {}: {}",
+                theme.icon_warning(),
+                theme.warn("Unable to check file locks"),
+                e
+            );
+            eprintln!("{}", theme.muted("Will proceed with deletion"));
+            return Ok(true);
+        }
+    };
+
+    // Filter to only locked files
+    let locked_files: Vec<FileLockInfo> = lock_infos
+        .into_iter()
+        .filter(|info| info.locked || !info.processes.is_empty())
+        .collect();
+
+    // No locks found, proceed
+    if locked_files.is_empty() {
+        return Ok(true);
+    }
+
+    // With --anyway: auto-kill locking processes
+    if anyway {
+        // Collect all locking process PIDs
+        let mut pids = Vec::new();
+        for info in &locked_files {
+            for proc in &info.processes {
+                if !pids.contains(&proc.pid) {
+                    pids.push(proc.pid);
+                }
+            }
+        }
+
+        // Show processes to be killed
+        println!();
+        println!(
+            "{} {}",
+            theme.icon_warning(),
+            theme.error_bold("Files locked, killing locking processes...")
+        );
+        println!();
+        display_file_locks(&locked_files);
+        println!();
+
+        // Force kill processes
+        let results = kill_processes_force(&pids);
+
+        // Show kill results
+        for (pid, result) in results {
+            match result {
+                Ok(_) => {
+                    println!(
+                        "{} {}",
+                        theme.icon_success(),
+                        theme.muted(format!("Killed process PID: {pid}"))
+                    );
+                }
+                Err(e) => {
+                    println!(
+                        "{} {}",
+                        theme.icon_error(),
+                        theme.error(format!("Failed to kill process PID {pid}: {e}"))
+                    );
+                }
+            }
+        }
+        println!();
+
+        return Ok(true);
+    }
+
+    // Default: show lock info and ask user
+    println!();
+    println!(
+        "{} {}",
+        theme.icon_warning(),
+        theme.error_bold("Files are locked")
+    );
+    println!();
+
+    // Show detailed info using display_file_locks
+    display_file_locks(&locked_files);
+
+    println!();
+
+    // Ask user whether to continue
+    let confirm = Confirm::new("These files are in use, continue trying to delete?")
+        .with_default(false)
+        .with_help_message("Use --anyway to auto-kill locking processes and delete")
+        .prompt()?;
+
+    Ok(confirm)
+}
+
+/// Display deletion results
 pub fn display_removal_results(
     results: &[(std::path::PathBuf, Result<()>)],
     dry_run: bool,
     verbose: bool,
 ) {
     let theme = Theme::new();
-    let action = if dry_run { "预览删除" } else { "删除" };
+    let action = if dry_run { "Preview" } else { "Delete" };
     let (success_count, error_count) =
         results
             .iter()
@@ -374,23 +564,23 @@ pub fn display_removal_results(
                 }
             });
 
-    // 如果不是 verbose 模式，只显示汇总信息
+    // Non-verbose mode: show summary only
     if !verbose {
         println!(
             "{} {} {}",
-            theme.title("操作完成"),
-            theme.success(format!("成功: {success_count}")),
-            theme.error(format!("失败: {error_count}"))
+            theme.title("Done"),
+            theme.success(format!("Success: {success_count}")),
+            theme.error(format!("Failed: {error_count}"))
         );
 
-        // 只有在错误模式下才显示失败的文件
+        // Only show failed files when there are errors
         if error_count > 0 {
             for (path, result) in results {
                 if let Err(e) = result {
                     println!(
                         "{} {} {}",
                         theme.icon_error(),
-                        theme.error(format!("无法删除 {}", path.display())),
+                        theme.error(format!("Failed to delete {}", path.display())),
                         e
                     );
                 }
@@ -399,12 +589,12 @@ pub fn display_removal_results(
         return;
     }
 
-    // Verbose 模式：显示所有详细信息
+    // Verbose mode: show all details
     println!(
         "{} {} {}",
-        theme.title("操作完成"),
-        theme.success(format!("成功: {success_count}")),
-        theme.error(format!("失败: {error_count}"))
+        theme.title("Done"),
+        theme.success(format!("Success: {success_count}")),
+        theme.error(format!("Failed: {error_count}"))
     );
 
     for (path, result) in results {
@@ -417,25 +607,25 @@ pub fn display_removal_results(
             Err(e) => println!(
                 "{} {} {}",
                 theme.icon_error(),
-                theme.error(format!("无法删除 {}", path.display())),
+                theme.error(format!("Failed to delete {}", path.display())),
                 e
             ),
         }
     }
 }
 
-/// 显示强制终止结果
+/// Display force kill results
 pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Result<()>)]) {
     let theme = Theme::new();
 
-    println!("{} {}", theme.icon_fire(), theme.error_bold("强制终止进程"));
+    println!("{} {}", theme.icon_fire(), theme.error_bold("Force Kill Processes"));
     println!();
 
-    // 首先显示要终止的进程信息
-    println!("{}", theme.title("目标进程:"));
+    // Show target processes first
+    println!("{}", theme.title("Target processes:"));
     for info in port_infos {
         println!(
-            "  端口 {} - {} (PID: {})",
+            "  Port {} - {} (PID: {})",
             theme.highlight(info.port.to_string()),
             theme.success(&info.process.name),
             theme.muted(info.process.pid.to_string())
@@ -443,8 +633,8 @@ pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Resu
     }
     println!();
 
-    // 显示终止结果
-    println!("{}", theme.title("终止结果:"));
+    // Show kill results
+    println!("{}", theme.title("Kill results:"));
     let mut success_count = 0;
     let mut error_count = 0;
 
@@ -455,7 +645,7 @@ pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Resu
                 println!(
                     "{} {}",
                     theme.icon_success(),
-                    theme.success(format!("成功强制终止进程 {pid}"))
+                    theme.success(format!("Successfully force-killed process {pid}"))
                 );
             }
             Err(e) => {
@@ -463,7 +653,7 @@ pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Resu
                 println!(
                     "{} {}: {}",
                     theme.icon_error(),
-                    theme.error(format!("无法强制终止进程 {pid}")),
+                    theme.error(format!("Failed to force-kill process {pid}")),
                     e
                 );
             }
@@ -473,13 +663,13 @@ pub fn display_kill_results_force(port_infos: &[PortInfo], results: &[(u32, Resu
     println!();
     println!(
         "{} {} {}",
-        theme.title("强制终止完成"),
-        theme.success(format!("成功: {success_count}")),
-        theme.error(format!("失败: {error_count}"))
+        theme.title("Force kill complete"),
+        theme.success(format!("Success: {success_count}")),
+        theme.error(format!("Failed: {error_count}"))
     );
 }
 
-/// 实时进程内存展示
+/// Real-time process memory display
 pub struct TopRenderOptions {
     pub total_memory: u64,
     pub used_memory: u64,
@@ -497,7 +687,7 @@ pub fn display_top(
 ) {
     let theme = Theme::new();
 
-    // 列宽配置（使用 console::pad_str，支持中日韩宽字符）
+    // Column width config (using console::pad_str, supports CJK wide characters)
     const RANK_W: usize = 4;
     const NAME_W: usize = 26;
     const PID_W: usize = 10;
@@ -507,7 +697,7 @@ pub fn display_top(
 
     let mut lines: Vec<String> = Vec::new();
 
-    // 顶部摘要，添加实时状态指示
+    // Top summary with live status indicator
     let status_icon = if opts.refresh.is_multiple_of(2) {
         "●"
     } else {
@@ -516,7 +706,7 @@ pub fn display_top(
     lines.push(format!(
         "{} {} {}",
         theme.icon_lightning(),
-        theme.title("进程内存占用"),
+        theme.title("Process Memory Usage"),
         theme.muted(format!("[{status_icon}]"))
     ));
 
@@ -528,39 +718,39 @@ pub fn display_top(
         0.0
     };
 
-    // 创建实时状态行
+    // Build live status line
     let status_line = format!(
-        "刷新: {} | 间隔: {:.1}s | 进程: {} | 内存: {} / {} ({:.1}%) | {}",
+        "Refresh: {} | Interval: {:.1}s | Processes: {} | Memory: {} / {} ({:.1}%) | {}",
         opts.refresh,
         opts.interval,
         processes.len(),
         mem_used_str,
         mem_total_str,
         mem_pct,
-        theme.muted("Ctrl+C 退出")
+        theme.muted("Ctrl+C to exit")
     );
     lines.push(status_line);
 
-    // 添加进度条显示内存使用率
+    // Add progress bar for memory usage
     let bar_width = 30;
     let filled = (mem_pct / 100.0 * bar_width as f64).round() as usize;
     let bar = "=".repeat(filled) + &"·".repeat(bar_width - filled);
     lines.push(theme.muted(format!("[{bar}]")).to_string());
     lines.push(String::new());
 
-    let header_rank = pad_str("序号", RANK_W, Alignment::Left, None);
-    let header_name = pad_str("名称", NAME_W, Alignment::Left, None);
+    let header_rank = pad_str("#", RANK_W, Alignment::Left, None);
+    let header_name = pad_str("Name", NAME_W, Alignment::Left, None);
     let header_pid = pad_str("PID", PID_W, Alignment::Left, None);
-    let header_mem = pad_str("内存", MEM_W, Alignment::Right, None);
+    let header_mem = pad_str("Memory", MEM_W, Alignment::Right, None);
     let header_mem_pct = pad_str("Mem%", MEM_PCT_W, Alignment::Right, None);
     let header_cpu = pad_str("CPU", CPU_W, Alignment::Right, None);
-    let header_cmd = if opts.show_cmd { "命令" } else { "" };
+    let header_cmd = if opts.show_cmd { "Command" } else { "" };
 
     lines.push(format!(
         "{header_rank} {header_name} {header_pid} {header_mem} {header_mem_pct} {header_cpu} {header_cmd}"
     ));
 
-    let sep_len = RANK_W + NAME_W + PID_W + MEM_W + MEM_PCT_W + CPU_W + 6; // spaces between columns
+    let sep_len = RANK_W + NAME_W + PID_W + MEM_W + MEM_PCT_W + CPU_W + 6;
     lines.push(theme.muted("-".repeat(sep_len)).to_string());
 
     for (index, process) in processes.iter().enumerate() {
@@ -611,7 +801,7 @@ pub fn display_top(
     render_frame(&lines, opts.incremental, last_frame);
 }
 
-/// 将构建好的行以增量方式输出到终端
+/// Render built lines to terminal incrementally
 fn render_frame(lines: &[String], incremental: bool, last_frame: &mut Vec<String>) {
     if !incremental {
         for line in lines {
@@ -622,10 +812,10 @@ fn render_frame(lines: &[String], incremental: bool, last_frame: &mut Vec<String
 
     let mut stdout = io::stdout();
 
-    // 隐藏光标，避免闪烁
+    // Hide cursor to avoid flicker
     let _ = write!(stdout, "\x1b[?25l");
 
-    // 回到屏幕左上角，使用更高效的控制序列
+    // Move to top-left using efficient control sequence
     let _ = write!(stdout, "\x1b[H");
 
     let max_len = lines.len().max(last_frame.len());
@@ -634,16 +824,16 @@ fn render_frame(lines: &[String], incremental: bool, last_frame: &mut Vec<String
     for i in 0..max_len {
         match (lines.get(i), last_frame.get(i)) {
             (Some(new_line), Some(old_line)) if new_line == old_line => {
-                // 内容一致，快速移到下一行
+                // Content unchanged, move to next line quickly
                 let _ = write!(stdout, "\x1b[E");
             }
             (Some(new_line), _) => {
-                // 新行或内容变化，清理并输出
+                // New or changed line, clear and output
                 let _ = write!(stdout, "\x1b[2K{new_line}\r\n");
                 changed_lines += 1;
             }
             (None, Some(_)) => {
-                // 旧行需要清理
+                // Old line needs clearing
                 let _ = write!(stdout, "\x1b[2K\r\n");
                 changed_lines += 1;
             }
@@ -651,21 +841,21 @@ fn render_frame(lines: &[String], incremental: bool, last_frame: &mut Vec<String
         }
     }
 
-    // 只清理多余的行，减少不必要的操作
+    // Only clear excess lines to reduce unnecessary operations
     if max_len > lines.len() {
         let _ = write!(stdout, "\x1b[{}J", max_len - lines.len() + 1);
     } else {
-        // 清理光标到屏幕末尾
+        // Clear from cursor to end of screen
         let _ = write!(stdout, "\x1b[J");
     }
 
-    // 显示光标
+    // Show cursor
     let _ = write!(stdout, "\x1b[?25h");
 
-    // 立即刷新输出缓冲区
+    // Flush output buffer immediately
     let _ = stdout.flush();
 
-    // 高效更新 last_frame
+    // Efficiently update last_frame
     if changed_lines > 0 || lines.len() != last_frame.len() {
         last_frame.clear();
         last_frame.extend(lines.iter().cloned());

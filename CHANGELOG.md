@@ -2,6 +2,39 @@
 
 Changes since v0.0.21:
 
+- Merge branch 'dev' (847b36c)
+- fix(ci): allow same version in npm version step (29756ec)
+- Merge branch 'dev' (102a6f0)
+- fix(ci): pin rust-toolchain to 1.88.0 in release workflow for target compatibility (d10a962)
+- chore(release): v0.0.22 (72ff684)
+- Merge pull request #3 from Protagonistss/dev (0ff0265)
+- fix: remove dead code for non-Windows stubs and fix clippy single_match (d730d5b)
+- fix(lock): use compile-time cfg instead of runtime cfg! for platform-specific functions (6ff0448)
+- style: apply cargo fmt formatting (b3ffda6)
+- fix: resolve cross-platform compilation errors for non-Windows (caf0c6b)
+- fix(ci): add rustfmt and clippy to rust-toolchain.toml (2a062eb)
+- Merge pull request #2 from Protagonistss/dev (f3d08e0)
+- chore: translate package description to English (50d8352)
+- chore(ci): use rust-toolchain.toml for version pinning (def72c7)
+- feat(ci): rewrite release workflow with workflow_dispatch and checksums (6d24a10)
+- chore: pin Rust toolchain to 1.88.0 (46d10b5)
+- chore(release): add optimized release profile (741a55b)
+- Merge pull request #1 from Protagonistss/dev (1fa8803)
+- refactor: Remove 功能 7 项优化 + 全项目中文替换为英文 (e74273f)
+- fix(fs): 保留原始 IO 错误链以支持重试检测 (f9c4fa6)
+- feat(fs): 添加删除重试机制，指数退避自动重试占用文件 (26da89d)
+- fix(lock): 移除 PowerShell 回退中的 wmic 调用 (9be98c3)
+- feat(lock): 使用 RestartManager API 检测文件占用进程 (d76f218)
+- chore(deps): 添加 windows-sys RestartManager feature (73341db)
+- docs: 添加 Windows 文件删除占用问题改进设计文档 (4089691)
+- refactor: 代码优化 - 消除重复、重构模块、简化函数 (506de64)
+- feat(fs): 集成文件占用检查功能到 remove 命令 (0f3adaf)
+- feat(fs): 添加文件/目录占用检查功能 (9decf87)
+
+## v0.0.22 (2026-04-18)
+
+Changes since v0.0.21:
+
 - Merge pull request #3 from Protagonistss/dev (0ff0265)
 - fix: remove dead code for non-Windows stubs and fix clippy single_match (d730d5b)
 - fix(lock): use compile-time cfg instead of runtime cfg! for platform-specific functions (6ff0448)

@@ -10,6 +10,17 @@ const RETRY_INITIAL_WAIT_MS: u64 = 100;
 #[cfg(target_os = "windows")]
 const RETRY_MAX_WAIT_MS: u64 = 1000;
 
+/// Force kill all processes locking a file/directory (Windows only)
+#[cfg(target_os = "windows")]
+fn force_kill_lockers(path: &Path) {
+    use crate::core::process::{find_processes_by_file, kill_process_force};
+    if let Ok(pids) = find_processes_by_file(path) {
+        for pid in pids {
+            let _ = kill_process_force(pid);
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FileInfo {
     pub path: PathBuf,
@@ -112,12 +123,7 @@ fn collect_dir_files(dir: &Path, files: &mut Vec<FileInfo>) -> Result<()> {
 }
 
 /// Execute deletion
-pub fn remove_files(
-    files: &[FileInfo],
-    dry_run: bool,
-    _verbose: bool,
-    anyway: bool,
-) -> Vec<(PathBuf, Result<()>)> {
+pub fn remove_files(files: &[FileInfo], dry_run: bool, anyway: bool) -> Vec<(PathBuf, Result<()>)> {
     // Windows special handling: try bulk deletion
     #[cfg(target_os = "windows")]
     if let Some(results) = try_windows_bulk_remove(files, dry_run, anyway) {
@@ -147,9 +153,6 @@ fn try_windows_bulk_remove(
     }
 
     // Try to use remove_dir_all to delete the entire directory tree, with retries
-    #[cfg(target_os = "windows")]
-    use crate::core::process::{find_processes_by_file, kill_process_force};
-
     let mut wait_ms = RETRY_INITIAL_WAIT_MS;
     let mut last_err = None;
     let mut success = false;
@@ -173,11 +176,7 @@ fn try_windows_bulk_remove(
                 }
 
                 if anyway {
-                    if let Ok(pids) = find_processes_by_file(&root_dir.path) {
-                        for pid in pids {
-                            let _ = kill_process_force(pid);
-                        }
-                    }
+                    force_kill_lockers(&root_dir.path);
                 }
 
                 eprintln!("  Retrying ({}/{})...", attempt + 1, RETRY_MAX_ATTEMPTS);
@@ -500,7 +499,6 @@ fn is_retryable_error(e: &std::io::Error) -> bool {
 /// File deletion with exponential backoff retry
 #[cfg(target_os = "windows")]
 fn remove_with_retry(file: &FileInfo, anyway: bool) -> Result<()> {
-    use crate::core::process::{find_processes_by_file, kill_process_force};
     use std::thread;
     use std::time::Duration;
 
@@ -529,11 +527,7 @@ fn remove_with_retry(file: &FileInfo, anyway: bool) -> Result<()> {
                 );
 
                 if anyway {
-                    if let Ok(pids) = find_processes_by_file(&file.path) {
-                        for pid in pids {
-                            let _ = kill_process_force(pid);
-                        }
-                    }
+                    force_kill_lockers(&file.path);
                 }
 
                 thread::sleep(Duration::from_millis(wait_ms));

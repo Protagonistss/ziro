@@ -65,8 +65,8 @@ pub enum Commands {
         /// Show detailed deletion progress
         #[arg(short = 'V', long = "verbose")]
         verbose: bool,
-        /// Force deletion even if files are locked
-        #[arg(long = "anyway")]
+        /// Force kill processes locking the files, then delete
+        #[arg(long = "anyway", visible_alias = "kill-lockers")]
         anyway: bool,
     },
     /// Monitor process memory usage in real time (like top)

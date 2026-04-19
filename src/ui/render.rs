@@ -28,41 +28,29 @@ pub fn select_processes_to_kill(port_infos: Vec<PortInfo>) -> Result<Vec<PortInf
 
     let options: Vec<String> = port_infos
         .iter()
-        .map(|info| {
+        .enumerate()
+        .map(|(i, info)| {
             format!(
-                "Port {} - {} (PID: {}) - {}",
-                info.port,
-                info.process.name,
-                info.process.pid,
-                info.process.cmd.join(" ")
+                "[{}] Port {} - {} (PID: {})",
+                i, info.port, info.process.name, info.process.pid
             )
         })
         .collect();
 
-    // Default: select all (using index array)
     let defaults: Vec<usize> = (0..options.len()).collect();
 
     let selected = MultiSelect::new("Select processes to kill:", options)
         .with_default(&defaults)
         .prompt()?;
 
-    // Find selected processes
-    let mut result = Vec::new();
-    for selection in selected {
-        for info in &port_infos {
-            let expected = format!(
-                "Port {} - {} (PID: {}) - {}",
-                info.port,
-                info.process.name,
-                info.process.pid,
-                info.process.cmd.join(" ")
-            );
-            if selection == expected {
-                result.push(info.clone());
-                break;
-            }
-        }
-    }
+    let result: Vec<PortInfo> = selected
+        .iter()
+        .filter_map(|s| {
+            let idx_str = s.trim_start_matches('[').split(']').next()?;
+            let idx: usize = idx_str.parse().ok()?;
+            port_infos.get(idx).cloned()
+        })
+        .collect();
 
     if result.is_empty() {
         println!("{}", theme.warn("No processes selected"));
@@ -183,7 +171,7 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
                 continuation,
                 theme.info("Resources"),
                 theme.accent(format!("{:.1}%", info.process.cpu_usage)),
-                theme.accent(format!("{} MB", info.process.memory / 1024 / 1024))
+                theme.accent(super::format_size(info.process.memory))
             );
         } else {
             // Port free
@@ -257,7 +245,7 @@ pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
             continuation,
             theme.info("Resources"),
             theme.accent(format!("{:.1}%", info.process.cpu_usage)),
-            theme.accent(format!("{} MB", info.process.memory / 1024 / 1024))
+            theme.accent(super::format_size(info.process.memory))
         );
 
         if !is_last {

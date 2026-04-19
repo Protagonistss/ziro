@@ -119,7 +119,7 @@ pub fn apply_profile_env(profile: &TerminalProfile) {
     }
 }
 
-fn is_truthy_env(key: &str) -> bool {
+pub fn is_truthy_env(key: &str) -> bool {
     env::var(key).map(|v| is_truthy(&v)).unwrap_or(false)
 }
 

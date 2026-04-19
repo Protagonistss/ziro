@@ -64,7 +64,7 @@ pub fn handle_list() -> Result<()> {
     Ok(())
 }
 
-pub fn handle_who(paths: Vec<std::path::PathBuf>) -> Result<()> {
+pub fn handle_who(paths: Vec<PathBuf>) -> Result<()> {
     if paths.is_empty() {
         bail!("Please specify at least one file or directory path");
     }
@@ -112,7 +112,7 @@ pub fn handle_remove(opts: RemoveOptions) -> Result<()> {
         return Ok(());
     }
 
-    let results = fs_ops::remove_files(&files, opts.dry_run, opts.verbose, opts.anyway);
+    let results = fs_ops::remove_files(&files, opts.dry_run, opts.anyway);
     ui::display_removal_results(&results, opts.dry_run, opts.verbose);
     Ok(())
 }

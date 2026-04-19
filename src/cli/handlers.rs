@@ -87,7 +87,7 @@ pub fn handle_top(interval: f32, limit: usize, cpu: bool, cmd: bool, once: bool)
         show_cmd: cmd,
         once,
     };
-    top::run_top(opts)
+    top::run_top(opts, ui::display_top)
 }
 
 pub fn handle_remove(opts: RemoveOptions) -> Result<()> {

@@ -3,8 +3,6 @@ use crate::platform::term::{self, TerminalProfile};
 use crate::platform::term::{
     is_powershell_core, is_windows_powershell_legacy, is_windows_terminal_or_conemu,
 };
-use crate::ui;
-use crate::ui::TopRenderOptions;
 use anyhow::Result;
 use std::io::{self, Write};
 use std::thread;
@@ -130,6 +128,17 @@ pub struct TopOptions {
     pub once: bool,
 }
 
+/// Rendering options for top display
+pub struct TopRenderOptions {
+    pub total_memory: u64,
+    pub used_memory: u64,
+    pub refresh: u64,
+    pub interval: f32,
+    pub show_cpu: bool,
+    pub show_cmd: bool,
+    pub incremental: bool,
+}
+
 /// Process info for display
 pub struct ProcessView {
     pub pid: u32,
@@ -140,7 +149,10 @@ pub struct ProcessView {
     pub cmd: String,
 }
 
-pub fn run_top(opts: TopOptions) -> Result<()> {
+pub fn run_top(
+    opts: TopOptions,
+    render: fn(&[ProcessView], &TopRenderOptions, &mut Vec<String>),
+) -> Result<()> {
     let process_refresh = ProcessRefreshKind::everything();
     let mut system = System::new_with_specifics(RefreshKind::new().with_processes(process_refresh));
 
@@ -238,7 +250,7 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
             incremental,
         };
 
-        ui::display_top(&processes, render_opts, &mut last_frame);
+        render(&processes, &render_opts, &mut last_frame);
 
         if opts.once {
             break;

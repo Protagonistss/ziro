@@ -4,17 +4,19 @@
 
 A fast, cross-platform port management tool
 
-一个快速、跨平台的端口管理工具
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Crates.io](https://img.shields.io/crates/v/ziro.svg)](https://crates.io/crates/ziro)
 [![npm](https://img.shields.io/npm/v/@ithinku/ziro.svg)](https://www.npmjs.com/package/@ithinku/ziro)
 
 **Choose Language / 选择语言:**
 
-[🇺🇸 English](README.en.md) | [🇨🇳 简体中文](README.zh.md)
+[🇺🇸 English](README.md) | [🇨🇳 简体中文](README.zh.md)
 
 </div>
+
+## Introduction
+
+Ziro is a powerful command-line tool for quickly finding and managing processes that occupy ports. Supports Windows, Linux, and macOS platforms.
 
 ## Quick Start
 
@@ -30,7 +32,7 @@ cargo install ziro
 npm install -g @ithinku/ziro
 ```
 
-### Usage
+### Basic Usage
 
 ```bash
 # Find process on port 8080
@@ -38,13 +40,16 @@ ziro find 8080
 
 # Kill process on port 8080
 ziro kill 8080
-
-# List all ports
-ziro list
-
-# Check file/directory lock
-ziro who C:\path\file.txt
 ```
+
+## Documentation
+
+For full details, please refer to our detailed documentation:
+
+- [Installation Guide](docs/en/01-installation.md)
+- [Usage Guide](docs/en/02-usage.md)
+- [Development Guide](docs/en/03-development.md)
+- [Contributing Guide](docs/en/04-contributing.md)
 
 ---
 

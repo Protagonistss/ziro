@@ -32,7 +32,11 @@ pub fn handle_kill(ports: Vec<u16>, force: bool) -> Result<()> {
     let port_infos = port::find_processes_by_ports(&ports)?;
 
     if port_infos.is_empty() {
-        println!("No processes found occupying the specified ports");
+        let theme = Theme::new();
+        println!(
+            "{}",
+            theme.warn("No processes found occupying the specified ports")
+        );
         for &port in &ports {
             ui::display_port_not_found(port);
         }
@@ -95,7 +99,8 @@ pub fn handle_remove(opts: RemoveOptions) -> Result<()> {
     let files = fs_ops::collect_files_to_remove(&opts.paths, opts.recursive)?;
 
     if files.is_empty() {
-        println!("No matching files or directories found");
+        let theme = Theme::new();
+        println!("{}", theme.warn("No matching files or directories found"));
         return Ok(());
     }
 

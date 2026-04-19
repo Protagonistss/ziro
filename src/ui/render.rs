@@ -105,6 +105,16 @@ fn truncate_string(s: &str, max_len: usize) -> String {
     }
 }
 
+/// Return tree drawing characters for the given position
+fn tree_branches(total: usize, index: usize) -> (&'static str, &'static str) {
+    let is_last = index == total - 1;
+    if is_last {
+        ("└─", "   ")
+    } else {
+        ("├─", "│  ")
+    }
+}
+
 /// Display error message
 pub fn display_error(error: &anyhow::Error) {
     let theme = Theme::new();
@@ -134,9 +144,7 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
 
     let total = ports.len();
     for (index, &port) in ports.iter().enumerate() {
-        let is_last = index == total - 1;
-        let branch = if is_last { "└─" } else { "├─" };
-        let continuation = if is_last { "   " } else { "│  " };
+        let (branch, continuation) = tree_branches(total, index);
 
         if let Some(info) = port_map.get(&port) {
             // Port in use
@@ -184,7 +192,7 @@ pub fn display_ports_tree(ports: &[u16], port_infos: Vec<PortInfo>) {
             );
         }
 
-        if !is_last {
+        if continuation == "│  " {
             println!("{continuation}");
         }
     }
@@ -209,9 +217,7 @@ pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
 
     let total = port_infos.len();
     for (index, info) in port_infos.iter().enumerate() {
-        let is_last = index == total - 1;
-        let branch = if is_last { "└─" } else { "├─" };
-        let continuation = if is_last { "   " } else { "│  " };
+        let (branch, continuation) = tree_branches(total, index);
 
         // Port number and status
         println!(
@@ -248,7 +254,7 @@ pub fn display_ports_tree_all(port_infos: Vec<PortInfo>) {
             theme.accent(super::format_size(info.process.memory))
         );
 
-        if !is_last {
+        if continuation == "│  " {
             println!("{continuation}");
         }
     }
@@ -268,9 +274,7 @@ pub fn display_file_locks(infos: &[FileLockInfo]) {
 
     let total = infos.len();
     for (index, info) in infos.iter().enumerate() {
-        let is_last = index == total - 1;
-        let branch = if is_last { "└─" } else { "├─" };
-        let continuation = if is_last { "   " } else { "│  " };
+        let (branch, continuation) = tree_branches(total, index);
 
         let kind = if info.path.is_dir() {
             theme.blue("Dir")
@@ -322,7 +326,7 @@ pub fn display_file_locks(infos: &[FileLockInfo]) {
             }
         }
 
-        if !is_last {
+        if continuation == "│  " {
             println!("{continuation}");
         }
     }

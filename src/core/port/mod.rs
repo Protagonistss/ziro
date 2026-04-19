@@ -39,10 +39,9 @@ pub struct PortInfo {
 /// Find processes occupying multiple ports
 pub fn find_processes_by_ports(ports: &[u16]) -> Result<Vec<PortInfo>> {
     let connections = get_network_connections()?;
-    let mut sys = System::new_with_specifics(
+    let sys = System::new_with_specifics(
         RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
     );
-    sys.refresh_all();
 
     let mut result = Vec::new();
 
@@ -64,10 +63,9 @@ pub fn find_processes_by_ports(ports: &[u16]) -> Result<Vec<PortInfo>> {
 /// List all port usage
 pub fn list_all_ports() -> Result<Vec<PortInfo>> {
     let connections = get_network_connections()?;
-    let mut sys = System::new_with_specifics(
+    let sys = System::new_with_specifics(
         RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
     );
-    sys.refresh_all();
 
     let mut result = Vec::new();
 

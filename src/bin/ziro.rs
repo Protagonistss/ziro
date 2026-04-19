@@ -52,7 +52,13 @@ fn run() -> Result<()> {
             cmd,
             once,
         }) => handle_top(interval, limit, cpu, cmd, once)?,
-        None => println!("Use 'ziro --help' to see available commands"),
+        None => {
+            let theme = ziro::ui::Theme::new();
+            println!(
+                "{}",
+                theme.info("Use 'ziro --help' to see available commands")
+            );
+        }
     }
 
     Ok(())

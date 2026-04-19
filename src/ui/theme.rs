@@ -128,15 +128,15 @@ impl Theme {
     }
 
     pub fn icon_folder(&self) -> String {
-        icons::icons().folder().to_string()
+        self.paint_icon(icons::icons().folder(), Color::Cyan)
     }
 
     pub fn icon_file(&self) -> String {
-        icons::icons().file().to_string()
+        self.paint_icon(icons::icons().file(), Color::Blue)
     }
 
     pub fn icon_link(&self) -> String {
-        icons::icons().link().to_string()
+        self.paint_icon(icons::icons().link(), Color::Magenta)
     }
 }
 

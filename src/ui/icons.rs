@@ -114,10 +114,6 @@ impl Icons {
             return IconMode::Ascii;
         }
 
-        if is_truthy_env("ZIRO_UNICODE_ICONS") {
-            return IconMode::Unicode;
-        }
-
         if is_truthy_env("ZIRO_NARROW") {
             return IconMode::Narrow;
         }

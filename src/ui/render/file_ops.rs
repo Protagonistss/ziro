@@ -5,7 +5,7 @@ use anyhow::Result;
 use inquire::Confirm;
 use std::path::PathBuf;
 
-use super::{format_size, truncate_string, tree_branches};
+use super::{format_size, tree_branches, truncate_string};
 
 /// Display file/directory lock status
 pub fn display_file_locks(infos: &[FileLockInfo]) {

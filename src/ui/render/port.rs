@@ -3,7 +3,7 @@ use crate::ui::Theme;
 use anyhow::Result;
 use inquire::{Confirm, MultiSelect};
 
-use super::{format_size, truncate_string, tree_branches};
+use super::{format_size, tree_branches, truncate_string};
 
 /// Display message for port not in use
 pub fn display_port_not_found(port: u16) {

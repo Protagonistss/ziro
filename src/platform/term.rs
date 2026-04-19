@@ -120,9 +120,12 @@ pub fn apply_profile_env(profile: &TerminalProfile) {
 }
 
 fn is_truthy_env(key: &str) -> bool {
-    env::var(key)
-        .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes" | "on"))
-        .unwrap_or(false)
+    env::var(key).map(|v| is_truthy(&v)).unwrap_or(false)
+}
+
+/// Check if a string value represents a truthy/affirmative value
+pub fn is_truthy(value: &str) -> bool {
+    matches!(value.to_lowercase().as_str(), "1" | "true" | "yes" | "on")
 }
 
 /// Detect whether the terminal is modern (improved version)

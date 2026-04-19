@@ -301,11 +301,9 @@ impl Icons {
 }
 
 fn is_truthy_env(key: &str) -> bool {
-    if let Ok(v) = env::var(key) {
-        let v = v.to_lowercase();
-        return matches!(v.as_str(), "1" | "true" | "yes" | "on");
-    }
-    false
+    env::var(key)
+        .map(|v| crate::platform::term::is_truthy(&v))
+        .unwrap_or(false)
 }
 
 fn is_likely_non_utf8() -> bool {
@@ -433,9 +431,11 @@ impl std::fmt::Display for StyledEmoji {
     }
 }
 
-/// Get icon manager instance
-pub fn icons() -> Icons {
-    Icons::new()
+/// Get cached icon manager instance
+pub fn icons() -> &'static Icons {
+    use std::sync::OnceLock;
+    static INSTANCE: OnceLock<Icons> = OnceLock::new();
+    INSTANCE.get_or_init(Icons::new)
 }
 
 #[cfg(test)]

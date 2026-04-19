@@ -162,20 +162,27 @@ fn get_network_connections() -> Result<HashMap<u16, u32>> {
 
 #[cfg(target_os = "linux")]
 fn parse_proc_net(content: &str, connections: &mut HashMap<u16, u32>) -> Result<()> {
+    for (port, inode) in parse_proc_net_entries(content) {
+        if let Ok(pid) = find_pid_by_inode(inode) {
+            connections.insert(port, pid);
+        }
+    }
+    Ok(())
+}
+
+/// Parse /proc/net/tcp entries, returning (port, inode) pairs.
+#[cfg(any(target_os = "linux", test))]
+fn parse_proc_net_entries(content: &str) -> Vec<(u16, u64)> {
+    let mut entries = Vec::new();
     for line in content.lines().skip(1) {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 10 {
-            // Parse local address (format: 0100007F:1F90 represents 127.0.0.1:8080)
             if let Some(local_addr) = parts.get(1) {
                 if let Some(port_hex) = local_addr.split(':').nth(1) {
                     if let Ok(port) = u16::from_str_radix(port_hex, 16) {
-                        // Parse inode
                         if let Some(inode_str) = parts.get(9) {
                             if let Ok(inode) = inode_str.parse::<u64>() {
-                                // Find PID by inode
-                                if let Ok(pid) = find_pid_by_inode(inode) {
-                                    connections.insert(port, pid);
-                                }
+                                entries.push((port, inode));
                             }
                         }
                     }
@@ -183,7 +190,7 @@ fn parse_proc_net(content: &str, connections: &mut HashMap<u16, u32>) -> Result<
             }
         }
     }
-    Ok(())
+    entries
 }
 
 #[cfg(target_os = "linux")]
@@ -307,15 +314,22 @@ Active Connections
         assert!(result.is_empty());
     }
 
-    #[cfg(target_os = "linux")]
     #[test]
-    fn test_parse_proc_net() {
+    fn test_parse_proc_net_entries() {
         let input = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
-   0: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 12345 1 0000000000000000 100 0 0 10 0";
-        let mut connections = HashMap::new();
-        parse_proc_net(input, &mut connections).unwrap();
-        // 0x1F90 = 8080
-        assert_eq!(connections.get(&8080), Some(&12345));
+   0: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 12345 1 0000000000000000 100 0 0 10 0
+   1: 00000000:0016 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 67890 1 0000000000000000 100 0 0 10 0";
+        let entries = parse_proc_net_entries(input);
+        // 0x1F90 = 8080, 0x0016 = 22
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0], (8080, 12345));
+        assert_eq!(entries[1], (22, 67890));
+    }
+
+    #[test]
+    fn test_parse_proc_net_entries_empty() {
+        let entries = parse_proc_net_entries("  sl  local_address rem_address\n");
+        assert!(entries.is_empty());
     }
 
     #[test]

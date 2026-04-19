@@ -266,3 +266,55 @@ fn get_network_connections() -> Result<HashMap<u16, u32>> {
         "Network connection queries are not supported on the current operating system",
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_parse_netstat_output() {
+        let input = b"\
+Active Connections
+
+  Proto  Local Address          Foreign Address        State           PID
+  TCP    0.0.0.0:8080           0.0.0.0:0              LISTENING       1234
+  TCP    0.0.0.0:443            0.0.0.0:0              LISTENING       5678
+  TCP    [::]:3000              [::]:0                 LISTENING       9012
+";
+        let result = parse_netstat_output(input).unwrap();
+        assert_eq!(result.get(&8080), Some(&1234));
+        assert_eq!(result.get(&443), Some(&5678));
+        assert_eq!(result.get(&3000), Some(&9012));
+        assert_eq!(result.len(), 3);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_parse_netstat_skips_headers() {
+        let input = b"\
+Active Connections
+  Proto  Local Address          Foreign Address        State           PID
+";
+        let result = parse_netstat_output(input).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_parse_netstat_empty() {
+        let result = parse_netstat_output(b"").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_parse_proc_net() {
+        let input = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 12345 1 0000000000000000 100 0 0 10 0";
+        let mut connections = HashMap::new();
+        parse_proc_net(input, &mut connections).unwrap();
+        // 0x1F90 = 8080
+        assert_eq!(connections.get(&8080), Some(&12345));
+    }
+}

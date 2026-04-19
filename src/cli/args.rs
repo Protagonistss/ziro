@@ -6,12 +6,7 @@ use std::path::PathBuf;
 #[command(name = "ziro")]
 #[command(about = "Find and kill processes occupying ports", long_about = None)]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(disable_version_flag = true)]
 pub struct Cli {
-    /// Show version information
-    #[arg(short = 'v', long = "version")]
-    pub version: bool,
-
     /// Force ASCII icons (equivalent to ZIRO_ASCII_ICONS=1)
     #[arg(long = "ascii")]
     pub ascii: bool,
@@ -68,9 +63,9 @@ pub enum Commands {
         #[arg(short = 'n', long = "dry-run")]
         dry_run: bool,
         /// Show detailed deletion progress
-        #[arg(long = "verbose")]
+        #[arg(short = 'V', long = "verbose")]
         verbose: bool,
-        /// Ignore lock warnings and attempt deletion directly
+        /// Force deletion even if files are locked
         #[arg(long = "anyway")]
         anyway: bool,
     },

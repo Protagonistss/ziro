@@ -1,27 +1,25 @@
-//! Process management module
-//!
-//! Provides process querying, termination, and file lock detection capabilities
-
 use anyhow::{Result, anyhow};
 use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
-use sysinfo::{ProcessRefreshKind, RefreshKind, System};
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 
-// Export submodules
 pub mod encoding;
 pub mod lock;
 
-// Re-export commonly used types and functions
 pub use lock::{FileLockInfo, FileLockProcess, find_processes_by_file, is_file_locked};
+
+fn create_process_system() -> System {
+    System::new_with_specifics(RefreshKind::new().with_processes(ProcessRefreshKind::everything()))
+}
+
+fn refresh_processes(sys: &mut System) {
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, ProcessRefreshKind::everything());
+}
 
 /// Kill the process with the given PID
 pub fn kill_process(pid: u32) -> Result<()> {
-    let mut sys = System::new_with_specifics(
-        RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
-    );
-    sys.refresh_all();
-
+    let sys = create_process_system();
     let pid_obj = sysinfo::Pid::from_u32(pid);
 
     if let Some(process) = sys.process(pid_obj) {
@@ -44,56 +42,33 @@ pub fn kill_processes(pids: &[u32]) -> Vec<(u32, Result<()>)> {
 
 /// Force kill the process with the given PID (multiple attempts)
 pub fn kill_process_force(pid: u32) -> Result<()> {
-    // First check if the process exists
-    {
-        let mut sys = System::new_with_specifics(
-            RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
-        );
-        sys.refresh_all();
+    let mut sys = create_process_system();
+    let pid_obj = sysinfo::Pid::from_u32(pid);
 
-        let pid_obj = sysinfo::Pid::from_u32(pid);
-        if sys.process(pid_obj).is_none() {
-            // Process no longer exists, consider it a success
-            return Ok(());
-        }
+    if sys.process(pid_obj).is_none() {
+        return Ok(());
     }
 
-    // Attempt to kill the process up to 3 times
     for attempt in 1..=3 {
-        {
-            let mut sys = System::new_with_specifics(
-                RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
-            );
-            sys.refresh_all();
-
-            let pid_obj = sysinfo::Pid::from_u32(pid);
-            if let Some(process) = sys.process(pid_obj) {
-                if process.kill() {
-                    // Wait for the process to actually exit
-                    thread::sleep(Duration::from_millis(500));
-
-                    // Refresh process status and check if it still exists
-                    sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
-                    if !sys.processes().contains_key(&pid_obj) {
-                        return Ok(());
-                    }
-                } else {
-                    // If kill() returns false
-                    if attempt == 3 {
-                        return Err(anyhow!(
-                            "Failed to force kill process {pid} (administrator privileges may be required)"
-                        ));
-                    }
+        if let Some(process) = sys.process(pid_obj) {
+            if process.kill() {
+                thread::sleep(Duration::from_millis(500));
+                refresh_processes(&mut sys);
+                if !sys.processes().contains_key(&pid_obj) {
+                    return Ok(());
                 }
-            } else {
-                // Process no longer exists, consider it a success
-                return Ok(());
+            } else if attempt == 3 {
+                return Err(anyhow!(
+                    "Failed to force kill process {pid} (administrator privileges may be required)"
+                ));
             }
+        } else {
+            return Ok(());
         }
 
-        // If not the last attempt, wait before retrying
         if attempt < 3 {
             thread::sleep(Duration::from_millis(1000));
+            refresh_processes(&mut sys);
         }
     }
 
@@ -111,11 +86,7 @@ pub fn kill_processes_force(pids: &[u32]) -> Vec<(u32, Result<()>)> {
 
 /// Check file lock status
 pub fn inspect_file_locks(paths: &[PathBuf]) -> Result<Vec<FileLockInfo>> {
-    let mut sys = System::new_with_specifics(
-        RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
-    );
-    sys.refresh_all();
-
+    let sys = create_process_system();
     let mut results = Vec::new();
 
     for path in paths {

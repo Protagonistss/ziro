@@ -1,26 +1,22 @@
 use crate::core::{fs_ops, port, process, top};
 use crate::ui;
-use anyhow::Result;
-use colored::Colorize;
-use console::Style;
-use std::env;
+use crate::ui::Theme;
+use anyhow::{Result, bail};
+use std::path::PathBuf;
 
-pub fn display_version() {
-    let version = env!("CARGO_PKG_VERSION");
-    let cyan = Style::new().cyan().bold();
-    let white = Style::new().white().bold();
-
-    println!(
-        "{} {}",
-        cyan.apply_to("ziro"),
-        white.apply_to(format!("v{version}"))
-    );
+/// Options for the remove command
+pub struct RemoveOptions {
+    pub paths: Vec<PathBuf>,
+    pub force: bool,
+    pub recursive: bool,
+    pub dry_run: bool,
+    pub verbose: bool,
+    pub anyway: bool,
 }
 
 pub fn handle_find(ports: Vec<u16>) -> Result<()> {
     if ports.is_empty() {
-        println!("Please specify at least one port number");
-        return Ok(());
+        bail!("Please specify at least one port number");
     }
 
     let port_infos = port::find_processes_by_ports(&ports)?;
@@ -30,8 +26,7 @@ pub fn handle_find(ports: Vec<u16>) -> Result<()> {
 
 pub fn handle_kill(ports: Vec<u16>, force: bool) -> Result<()> {
     if ports.is_empty() {
-        println!("Please specify at least one port number");
-        return Ok(());
+        bail!("Please specify at least one port number");
     }
 
     let port_infos = port::find_processes_by_ports(&ports)?;
@@ -71,8 +66,7 @@ pub fn handle_list() -> Result<()> {
 
 pub fn handle_who(paths: Vec<std::path::PathBuf>) -> Result<()> {
     if paths.is_empty() {
-        println!("Please specify at least one file or directory path");
-        return Ok(());
+        bail!("Please specify at least one file or directory path");
     }
 
     fs_ops::validate_paths(&paths)?;
@@ -92,39 +86,33 @@ pub fn handle_top(interval: f32, limit: usize, cpu: bool, cmd: bool, once: bool)
     top::run_top(opts)
 }
 
-pub fn handle_remove(
-    paths: Vec<std::path::PathBuf>,
-    force: bool,
-    recursive: bool,
-    dry_run: bool,
-    verbose: bool,
-    anyway: bool,
-) -> Result<()> {
-    if paths.is_empty() {
-        println!("Please specify at least one file or directory path");
-        return Ok(());
+pub fn handle_remove(opts: RemoveOptions) -> Result<()> {
+    if opts.paths.is_empty() {
+        bail!("Please specify at least one file or directory path");
     }
 
-    fs_ops::validate_paths(&paths)?;
-    let files = fs_ops::collect_files_to_remove(&paths, recursive)?;
+    fs_ops::validate_paths(&opts.paths)?;
+    let files = fs_ops::collect_files_to_remove(&opts.paths, opts.recursive)?;
 
     if files.is_empty() {
         println!("No matching files or directories found");
         return Ok(());
     }
 
-    if !ui::confirm_deletion(&files, force || anyway, dry_run)? {
-        println!("{}", "Operation cancelled".bright_yellow());
+    if !ui::confirm_deletion(&files, opts.force || opts.anyway, opts.dry_run)? {
+        let theme = Theme::new();
+        println!("{}", theme.warn("Operation cancelled"));
         return Ok(());
     }
 
     // Check file locks and warn user
-    if !ui::check_and_warn_file_locks(&files, anyway)? {
-        println!("{}", "Operation cancelled".bright_yellow());
+    if !ui::check_and_warn_file_locks(&files, opts.anyway)? {
+        let theme = Theme::new();
+        println!("{}", theme.warn("Operation cancelled"));
         return Ok(());
     }
 
-    let results = fs_ops::remove_files(&files, dry_run, verbose, anyway);
-    ui::display_removal_results(&results, dry_run, verbose);
+    let results = fs_ops::remove_files(&files, opts.dry_run, opts.verbose, opts.anyway);
+    ui::display_removal_results(&results, opts.dry_run, opts.verbose);
     Ok(())
 }

@@ -13,7 +13,14 @@ exclude = [
     "target/",
     ".git/",
     ".github/",
-    "*.log"
+    "*.log",
+    "package.json",
+    "package-lock.json",
+    "bin/",
+    "scripts/",
+    ".npmignore",
+    "AGENTS.md",
+    "docs/",
 ]
 
 [[bin]]

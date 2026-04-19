@@ -154,8 +154,7 @@ fn check_file_locking_status(path: &Path) -> bool {
                     .args([
                         "-Command",
                         &format!(
-                            "Get-Process | Where-Object {{$_.Modules.FileName -eq '{}'}} | Measure-Object",
-                            escaped
+                            "Get-Process | Where-Object {{$_.Modules.FileName -eq '{escaped}'}} | Measure-Object"
                         ),
                     ])
                     .output()
@@ -266,8 +265,8 @@ fn find_processes_with_restart_manager(path: &Path) -> Result<Vec<u32>> {
         return Ok(pids);
     }
 
-    for i in 0..proc_info_count as usize {
-        let pid = process_info[i].Process.dwProcessId;
+    for info in process_info.iter().take(proc_info_count as usize) {
+        let pid = info.Process.dwProcessId;
         if pid != 0 && !pids.contains(&pid) {
             pids.push(pid);
         }

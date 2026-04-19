@@ -217,7 +217,7 @@ fn try_windows_bulk_remove(
             println!(
                 "{} {}",
                 theme.icon_warning(),
-                theme.warning(format!(
+                theme.warn(format!(
                     "Bulk delete failed, trying individual deletion: {}",
                     last_err.unwrap_or_else(|| anyhow::anyhow!("Unknown error"))
                 ))
@@ -486,10 +486,10 @@ fn to_long_path(path: &Path) -> Result<PathBuf> {
     // Add \\?\ prefix
     let long_path = if let Some(stripped) = path_str.strip_prefix(r"\\") {
         // UNC path: \\?\UNC\server\share
-        PathBuf::from(format!(r"\\?\UNC\{}", stripped))
+        PathBuf::from(format!(r"\\?\UNC\{stripped}"))
     } else {
         // Regular path: \\?\C:\path
-        PathBuf::from(format!(r"\\?{}", path_str))
+        PathBuf::from(format!(r"\\?\{path_str}"))
     };
 
     Ok(long_path)
@@ -657,22 +657,4 @@ fn remove_entry(file: &FileInfo) -> Result<()> {
     };
 
     result.with_context(|| format!("Deletion failed: {}", file.path.display()))
-}
-
-/// Format file size
-pub fn format_size(size: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    let mut size = size as f64;
-    let mut unit_index = 0;
-
-    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
-    }
-
-    if unit_index == 0 {
-        format!("{} {}", size as u64, UNITS[unit_index])
-    } else {
-        format!("{:.1} {}", size, UNITS[unit_index])
-    }
 }

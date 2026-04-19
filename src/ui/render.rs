@@ -105,10 +105,15 @@ pub fn display_kill_results(results: &[(u32, Result<()>)]) {
 
 /// Truncate string to specified length
 fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    if s.chars().count() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let end = s
+            .char_indices()
+            .map(|(i, _)| i)
+            .nth(max_len.saturating_sub(3))
+            .unwrap_or(s.len());
+        format!("{}...", &s[..end])
     }
 }
 
@@ -352,10 +357,7 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
         theme.title("Summary:"),
         theme.success(format!("{file_count} files")),
         theme.blue(format!("{dir_count} directories")),
-        theme.warn(format!(
-            "Total size: {}",
-            crate::core::fs_ops::format_size(total_size)
-        ))
+        theme.warn(format!("Total size: {}", super::format_size(total_size)))
     );
     println!();
 
@@ -371,7 +373,7 @@ pub fn display_deletion_preview(files: &[FileInfo]) {
         };
 
         let size_str = if !file.is_dir && !file.is_symlink {
-            let size = format!(" ({})", crate::core::fs_ops::format_size(file.size));
+            let size = format!(" ({})", super::format_size(file.size));
             theme.muted(size)
         } else {
             String::new()
@@ -721,8 +723,8 @@ pub fn display_top(
         theme.muted(format!("[{status_icon}]"))
     ));
 
-    let mem_used_str = crate::core::fs_ops::format_size(opts.used_memory);
-    let mem_total_str = crate::core::fs_ops::format_size(opts.total_memory);
+    let mem_used_str = super::format_size(opts.used_memory);
+    let mem_total_str = super::format_size(opts.total_memory);
     let mem_pct = if opts.total_memory > 0 {
         (opts.used_memory as f64 / opts.total_memory as f64) * 100.0
     } else {
@@ -774,7 +776,7 @@ pub fn display_top(
             _ => theme.muted(&rank_plain),
         };
 
-        let mem_str = crate::core::fs_ops::format_size(process.memory_bytes);
+        let mem_str = super::format_size(process.memory_bytes);
         let mem_pct_str = format!("{:.1}%", process.memory_percent);
         let cpu_str = if opts.show_cpu {
             format!("{:.1}%", process.cpu)

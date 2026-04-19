@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 use ziro::cli::{
-    Cli, Commands, display_version, handle_find, handle_kill, handle_list, handle_remove,
-    handle_top, handle_who,
+    Cli, Commands, RemoveOptions, handle_find, handle_kill, handle_list, handle_remove, handle_top,
+    handle_who,
 };
 #[cfg(target_os = "windows")]
 use ziro::platform::encoding;
@@ -25,11 +25,6 @@ fn run() -> Result<()> {
     term::apply_profile_env(&profile);
     term::set_global_profile(profile);
 
-    if cli.version {
-        display_version();
-        return Ok(());
-    }
-
     match cli.command {
         Some(Commands::Find { ports }) => handle_find(ports)?,
         Some(Commands::Kill { ports, force }) => handle_kill(ports, force)?,
@@ -42,7 +37,14 @@ fn run() -> Result<()> {
             dry_run,
             verbose,
             anyway,
-        }) => handle_remove(paths, force, recursive, dry_run, verbose, anyway)?,
+        }) => handle_remove(RemoveOptions {
+            paths,
+            force,
+            recursive,
+            dry_run,
+            verbose,
+            anyway,
+        })?,
         Some(Commands::Top {
             interval,
             limit,

@@ -28,6 +28,7 @@ impl Default for TerminalProfile {
 static GLOBAL_PROFILE: OnceLock<TerminalProfile> = OnceLock::new();
 
 pub fn set_global_profile(profile: TerminalProfile) {
+    // First call wins; second call would be a bug
     let _ = GLOBAL_PROFILE.set(profile);
 }
 
@@ -330,7 +331,7 @@ fn is_very_modern_terminal() -> bool {
 fn has_virtual_terminal_processing() -> bool {
     use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
     use windows_sys::Win32::System::Console::{
-        GetConsoleMode, GetStdHandle, ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING, GetConsoleMode, GetStdHandle, STD_OUTPUT_HANDLE,
     };
 
     unsafe {

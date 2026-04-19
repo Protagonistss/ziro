@@ -16,6 +16,7 @@ fn force_kill_lockers(path: &Path) {
     use crate::core::process::{find_processes_by_file, kill_process_force};
     if let Ok(pids) = find_processes_by_file(path) {
         for pid in pids {
+            // Best-effort kill; ignore if process already gone
             let _ = kill_process_force(pid);
         }
     }

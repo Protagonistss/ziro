@@ -4,7 +4,7 @@ use std::path::PathBuf;
 /// Ziro - Cross-platform port management tool
 #[derive(Parser)]
 #[command(name = "ziro")]
-#[command(about = "Find and kill processes occupying ports", long_about = None)]
+#[command(about = "Cross-platform port and process management tool", long_about = None)]
 #[command(version = env!("CARGO_PKG_VERSION"))]
 pub struct Cli {
     /// Force ASCII icons (equivalent to ZIRO_ASCII_ICONS=1)

@@ -32,10 +32,7 @@ pub fn tree_branches(total: usize, index: usize) -> (&'static str, &'static str)
     }
 }
 
-/// Format byte size to human-readable string
-pub fn format_size(size: u64) -> String {
-    super::format_size(size)
-}
+pub use super::format_size;
 
 /// Display error message
 pub fn display_error(error: &anyhow::Error) {

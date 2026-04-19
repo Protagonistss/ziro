@@ -19,8 +19,8 @@ pub fn init_windows_console() {}
 fn enable_virtual_terminal_processing() {
     use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
     use windows_sys::Win32::System::Console::{
-        GetConsoleMode, GetStdHandle, SetConsoleMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING,
-        STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING, GetConsoleMode, GetStdHandle, STD_ERROR_HANDLE,
+        STD_OUTPUT_HANDLE, SetConsoleMode,
     };
 
     unsafe {
@@ -37,6 +37,7 @@ fn enable_virtual_terminal_processing() {
 
             let new_mode = mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
             if new_mode != mode {
+                // Best-effort VT enablement; ignore if unsupported
                 let _ = SetConsoleMode(handle, new_mode);
             }
         }

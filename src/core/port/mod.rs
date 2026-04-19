@@ -230,7 +230,7 @@ fn get_network_connections() -> Result<HashMap<u16, u32>> {
 }
 
 /// Parse lsof output, extract port-to-PID mapping
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 fn parse_lsof_output(stdout: &[u8]) -> Result<HashMap<u16, u32>> {
     let mut connections = HashMap::new();
 
@@ -316,5 +316,24 @@ Active Connections
         parse_proc_net(input, &mut connections).unwrap();
         // 0x1F90 = 8080
         assert_eq!(connections.get(&8080), Some(&12345));
+    }
+
+    #[test]
+    fn test_parse_lsof_output() {
+        let input = b"COMMAND   PID   USER   FD   TYPE   DEVICE SIZE/OFF NODE NAME
+node    12345   user   21u  IPv4 0x12345 0t0 TCP *:8080 (LISTEN)
+python  67890   user   22u  IPv6 0xabcde 0t0 TCP 127.0.0.1:3000 (LISTEN)
+";
+        let result = parse_lsof_output(input).unwrap();
+        assert_eq!(result.get(&8080), Some(&12345));
+        assert_eq!(result.get(&3000), Some(&67890));
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_lsof_empty() {
+        let result =
+            parse_lsof_output(b"COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n").unwrap();
+        assert!(result.is_empty());
     }
 }

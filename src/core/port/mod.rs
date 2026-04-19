@@ -39,10 +39,9 @@ pub struct PortInfo {
 /// Find processes occupying multiple ports
 pub fn find_processes_by_ports(ports: &[u16]) -> Result<Vec<PortInfo>> {
     let connections = get_network_connections()?;
-    let mut sys = System::new_with_specifics(
+    let sys = System::new_with_specifics(
         RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
     );
-    sys.refresh_all();
 
     let mut result = Vec::new();
 
@@ -64,10 +63,9 @@ pub fn find_processes_by_ports(ports: &[u16]) -> Result<Vec<PortInfo>> {
 /// List all port usage
 pub fn list_all_ports() -> Result<Vec<PortInfo>> {
     let connections = get_network_connections()?;
-    let mut sys = System::new_with_specifics(
+    let sys = System::new_with_specifics(
         RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
     );
-    sys.refresh_all();
 
     let mut result = Vec::new();
 
@@ -232,7 +230,7 @@ fn get_network_connections() -> Result<HashMap<u16, u32>> {
 }
 
 /// Parse lsof output, extract port-to-PID mapping
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 fn parse_lsof_output(stdout: &[u8]) -> Result<HashMap<u16, u32>> {
     let mut connections = HashMap::new();
 
@@ -267,4 +265,75 @@ fn get_network_connections() -> Result<HashMap<u16, u32>> {
     Err(anyhow::Error::msg(
         "Network connection queries are not supported on the current operating system",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_parse_netstat_output() {
+        let input = b"\
+Active Connections
+
+  Proto  Local Address          Foreign Address        State           PID
+  TCP    0.0.0.0:8080           0.0.0.0:0              LISTENING       1234
+  TCP    0.0.0.0:443            0.0.0.0:0              LISTENING       5678
+  TCP    [::]:3000              [::]:0                 LISTENING       9012
+";
+        let result = parse_netstat_output(input).unwrap();
+        assert_eq!(result.get(&8080), Some(&1234));
+        assert_eq!(result.get(&443), Some(&5678));
+        assert_eq!(result.get(&3000), Some(&9012));
+        assert_eq!(result.len(), 3);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_parse_netstat_skips_headers() {
+        let input = b"\
+Active Connections
+  Proto  Local Address          Foreign Address        State           PID
+";
+        let result = parse_netstat_output(input).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_parse_netstat_empty() {
+        let result = parse_netstat_output(b"").unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_parse_proc_net() {
+        let input = "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 12345 1 0000000000000000 100 0 0 10 0";
+        let mut connections = HashMap::new();
+        parse_proc_net(input, &mut connections).unwrap();
+        // 0x1F90 = 8080
+        assert_eq!(connections.get(&8080), Some(&12345));
+    }
+
+    #[test]
+    fn test_parse_lsof_output() {
+        let input = b"COMMAND   PID   USER   FD   TYPE   DEVICE SIZE/OFF NODE NAME
+node    12345   user   21u  IPv4 0x12345 0t0 TCP *:8080 (LISTEN)
+python  67890   user   22u  IPv6 0xabcde 0t0 TCP 127.0.0.1:3000 (LISTEN)
+";
+        let result = parse_lsof_output(input).unwrap();
+        assert_eq!(result.get(&8080), Some(&12345));
+        assert_eq!(result.get(&3000), Some(&67890));
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_lsof_empty() {
+        let result =
+            parse_lsof_output(b"COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n").unwrap();
+        assert!(result.is_empty());
+    }
 }

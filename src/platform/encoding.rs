@@ -1,9 +1,8 @@
 // Windows console UTF-8 initialization
 #[cfg(target_os = "windows")]
 pub fn init_windows_console() {
-    use winapi::um::wincon::{SetConsoleCP, SetConsoleOutputCP};
+    use windows_sys::Win32::System::Console::{SetConsoleCP, SetConsoleOutputCP};
     unsafe {
-        // Set input/output encoding to UTF-8 to reduce garbled text
         SetConsoleOutputCP(65001);
         SetConsoleCP(65001);
     }
@@ -18,11 +17,11 @@ pub fn init_windows_console() {}
 /// Enable Windows console virtual terminal sequences for cursor movement, screen clearing, etc.
 #[cfg(target_os = "windows")]
 fn enable_virtual_terminal_processing() {
-    use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
-    use winapi::um::handleapi::INVALID_HANDLE_VALUE;
-    use winapi::um::processenv::GetStdHandle;
-    use winapi::um::winbase::{STD_ERROR_HANDLE, STD_OUTPUT_HANDLE};
-    use winapi::um::wincon::ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Console::{
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING, GetConsoleMode, GetStdHandle, STD_ERROR_HANDLE,
+        STD_OUTPUT_HANDLE, SetConsoleMode,
+    };
 
     unsafe {
         for handle_id in [STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
@@ -38,6 +37,7 @@ fn enable_virtual_terminal_processing() {
 
             let new_mode = mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
             if new_mode != mode {
+                // Best-effort VT enablement; ignore if unsupported
                 let _ = SetConsoleMode(handle, new_mode);
             }
         }

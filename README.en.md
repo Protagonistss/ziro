@@ -147,7 +147,6 @@ Options:
 - **CLI Parsing**: clap
 - **System Info**: sysinfo
 - **Interactive UI**: inquire
-- **Table Display**: tabled
 - **Colored Output**: colored
 
 ## Development

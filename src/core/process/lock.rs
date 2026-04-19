@@ -154,8 +154,7 @@ fn check_file_locking_status(path: &Path) -> bool {
                     .args([
                         "-Command",
                         &format!(
-                            "Get-Process | Where-Object {{$_.Modules.FileName -eq '{}'}} | Measure-Object",
-                            escaped
+                            "Get-Process | Where-Object {{$_.Modules.FileName -eq '{escaped}'}} | Measure-Object"
                         ),
                     ])
                     .output()
@@ -266,8 +265,8 @@ fn find_processes_with_restart_manager(path: &Path) -> Result<Vec<u32>> {
         return Ok(pids);
     }
 
-    for i in 0..proc_info_count as usize {
-        let pid = process_info[i].Process.dwProcessId;
+    for info in process_info.iter().take(proc_info_count as usize) {
+        let pid = info.Process.dwProcessId;
         if pid != 0 && !pids.contains(&pid) {
             pids.push(pid);
         }
@@ -292,16 +291,7 @@ pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
         pids.extend(rm_pids);
     }
 
-    // Method 2: use handle.exe tool (if available)
-    if let Ok(handle_pids) = find_processes_with_handle(&path_str) {
-        for pid in handle_pids {
-            if !pids.contains(&pid) {
-                pids.push(pid);
-            }
-        }
-    }
-
-    // Method 3: use PowerShell to find (compatibility fallback)
+    // Method 2: use PowerShell to find (compatibility fallback)
     if let Ok(ps_pids) = find_processes_with_powershell(&path_str) {
         for pid in ps_pids {
             if !pids.contains(&pid) {
@@ -339,40 +329,6 @@ pub fn find_processes_by_file(path: &Path) -> Result<Vec<u32>> {
                     pids.push(pid);
                 }
             }
-        }
-    }
-
-    Ok(pids)
-}
-
-/// Windows-specific: use handle.exe to find locking processes
-#[cfg(target_os = "windows")]
-fn find_processes_with_handle(path_str: &str) -> Result<Vec<u32>> {
-    let mut pids = Vec::new();
-
-    match std::process::Command::new("handle.exe")
-        .arg(path_str)
-        .output()
-    {
-        Ok(output) => {
-            if output.status.success() {
-                let output_str = safe_command_output_to_string(&output.stdout);
-                for line in output_str.lines() {
-                    // handle.exe output format is typically: pid: process_name path
-                    if line.contains("pid:") {
-                        let parts: Vec<&str> = line.split_whitespace().collect();
-                        if parts.len() >= 2
-                            && let Some(pid_part) = parts.get(1)
-                            && let Ok(pid) = pid_part.trim_end_matches(':').parse::<u32>()
-                        {
-                            pids.push(pid);
-                        }
-                    }
-                }
-            }
-        }
-        Err(_) => {
-            // handle.exe not available, this is normal
         }
     }
 

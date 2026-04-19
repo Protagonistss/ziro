@@ -1,4 +1,3 @@
-use crate::ui::Theme;
 use anyhow::{Context, Result, anyhow};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,6 +9,18 @@ const RETRY_MAX_ATTEMPTS: u32 = 5;
 const RETRY_INITIAL_WAIT_MS: u64 = 100;
 #[cfg(target_os = "windows")]
 const RETRY_MAX_WAIT_MS: u64 = 1000;
+
+/// Force kill all processes locking a file/directory (Windows only)
+#[cfg(target_os = "windows")]
+fn force_kill_lockers(path: &Path) {
+    use crate::core::process::{find_processes_by_file, kill_process_force};
+    if let Ok(pids) = find_processes_by_file(path) {
+        for pid in pids {
+            // Best-effort kill; ignore if process already gone
+            let _ = kill_process_force(pid);
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct FileInfo {
@@ -113,22 +124,15 @@ fn collect_dir_files(dir: &Path, files: &mut Vec<FileInfo>) -> Result<()> {
 }
 
 /// Execute deletion
-pub fn remove_files(
-    files: &[FileInfo],
-    dry_run: bool,
-    verbose: bool,
-    anyway: bool,
-) -> Vec<(PathBuf, Result<()>)> {
-    let theme = Theme::new();
-
+pub fn remove_files(files: &[FileInfo], dry_run: bool, anyway: bool) -> Vec<(PathBuf, Result<()>)> {
     // Windows special handling: try bulk deletion
     #[cfg(target_os = "windows")]
-    if let Some(results) = try_windows_bulk_remove(files, dry_run, verbose, anyway, &theme) {
+    if let Some(results) = try_windows_bulk_remove(files, dry_run, anyway) {
         return results;
     }
 
     // Generic individual deletion logic
-    remove_files_individually(files, dry_run, verbose, anyway, &theme)
+    remove_files_individually(files, dry_run, anyway)
 }
 
 /// Windows special handling: try bulk deletion of root directory
@@ -136,11 +140,8 @@ pub fn remove_files(
 fn try_windows_bulk_remove(
     files: &[FileInfo],
     dry_run: bool,
-    verbose: bool,
     anyway: bool,
-    theme: &Theme,
 ) -> Option<Vec<(PathBuf, Result<()>)>> {
-    // Find the root directory specified by the user
     let root_dir = files.iter().find(|f| {
         f.is_dir
             && !files
@@ -153,8 +154,6 @@ fn try_windows_bulk_remove(
     }
 
     // Try to use remove_dir_all to delete the entire directory tree, with retries
-    use crate::core::process::{find_processes_by_file, kill_process_force};
-
     let mut wait_ms = RETRY_INITIAL_WAIT_MS;
     let mut last_err = None;
     let mut success = false;
@@ -178,24 +177,10 @@ fn try_windows_bulk_remove(
                 }
 
                 if anyway {
-                    if let Ok(pids) = find_processes_by_file(&root_dir.path) {
-                        for pid in pids {
-                            let _ = kill_process_force(pid);
-                        }
-                    }
+                    force_kill_lockers(&root_dir.path);
                 }
 
-                if verbose {
-                    println!(
-                        "{} {}",
-                        theme.icon_warning(),
-                        theme.muted(format!(
-                            "Retrying ({}/{})...",
-                            attempt + 1,
-                            RETRY_MAX_ATTEMPTS
-                        ))
-                    );
-                }
+                eprintln!("  Retrying ({}/{})...", attempt + 1, RETRY_MAX_ATTEMPTS);
 
                 std::thread::sleep(std::time::Duration::from_millis(wait_ms));
                 wait_ms = (wait_ms * 2).min(RETRY_MAX_WAIT_MS);
@@ -204,25 +189,12 @@ fn try_windows_bulk_remove(
     }
 
     if success {
-        if verbose {
-            println!(
-                "{} {}",
-                theme.icon_success(),
-                theme.muted(format!("Removed {}", root_dir.path.display()))
-            );
-        }
         Some(vec![(root_dir.path.clone(), Ok(()))])
     } else {
-        if verbose {
-            println!(
-                "{} {}",
-                theme.icon_warning(),
-                theme.warning(format!(
-                    "Bulk delete failed, trying individual deletion: {}",
-                    last_err.unwrap_or_else(|| anyhow::anyhow!("Unknown error"))
-                ))
-            );
-        }
+        eprintln!(
+            "  Bulk delete failed, trying individual deletion: {}",
+            last_err.unwrap_or_else(|| anyhow::anyhow!("Unknown error"))
+        );
         None
     }
 }
@@ -231,13 +203,10 @@ fn try_windows_bulk_remove(
 fn remove_files_individually(
     files: &[FileInfo],
     dry_run: bool,
-    verbose: bool,
     anyway: bool,
-    theme: &Theme,
 ) -> Vec<(PathBuf, Result<()>)> {
     let mut results = Vec::new();
 
-    // Ensure files are deleted before directories (depth-first)
     let mut sorted = files.to_vec();
     sorted.sort_by(|a, b| {
         if a.is_dir && !b.is_dir {
@@ -257,21 +226,6 @@ fn remove_files_individually(
         } else {
             remove_with_retry(&file, anyway)
         };
-
-        if verbose {
-            match &result {
-                Ok(_) => println!(
-                    "{} {}",
-                    theme.icon_success(),
-                    theme.muted(format!("Removed {}", file.path.display()))
-                ),
-                Err(e) => println!(
-                    "{} {}",
-                    theme.icon_error(),
-                    theme.error(format!("Failed to delete {} - {}", file.path.display(), e))
-                ),
-            }
-        }
 
         results.push((file.path, result));
     }
@@ -486,10 +440,10 @@ fn to_long_path(path: &Path) -> Result<PathBuf> {
     // Add \\?\ prefix
     let long_path = if let Some(stripped) = path_str.strip_prefix(r"\\") {
         // UNC path: \\?\UNC\server\share
-        PathBuf::from(format!(r"\\?\UNC\{}", stripped))
+        PathBuf::from(format!(r"\\?\UNC\{stripped}"))
     } else {
         // Regular path: \\?\C:\path
-        PathBuf::from(format!(r"\\?{}", path_str))
+        PathBuf::from(format!(r"\\?\{path_str}"))
     };
 
     Ok(long_path)
@@ -546,7 +500,6 @@ fn is_retryable_error(e: &std::io::Error) -> bool {
 /// File deletion with exponential backoff retry
 #[cfg(target_os = "windows")]
 fn remove_with_retry(file: &FileInfo, anyway: bool) -> Result<()> {
-    use crate::core::process::{find_processes_by_file, kill_process_force};
     use std::thread;
     use std::time::Duration;
 
@@ -575,11 +528,7 @@ fn remove_with_retry(file: &FileInfo, anyway: bool) -> Result<()> {
                 );
 
                 if anyway {
-                    if let Ok(pids) = find_processes_by_file(&file.path) {
-                        for pid in pids {
-                            let _ = kill_process_force(pid);
-                        }
-                    }
+                    force_kill_lockers(&file.path);
                 }
 
                 thread::sleep(Duration::from_millis(wait_ms));
@@ -657,22 +606,4 @@ fn remove_entry(file: &FileInfo) -> Result<()> {
     };
 
     result.with_context(|| format!("Deletion failed: {}", file.path.display()))
-}
-
-/// Format file size
-pub fn format_size(size: u64) -> String {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
-    let mut size = size as f64;
-    let mut unit_index = 0;
-
-    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
-    }
-
-    if unit_index == 0 {
-        format!("{} {}", size as u64, UNITS[unit_index])
-    } else {
-        format!("{:.1} {}", size, UNITS[unit_index])
-    }
 }

@@ -2,7 +2,7 @@
 //!
 //! Provides cross-platform icon support: Unicode Emoji first, then narrow-width symbols, finally ASCII fallback.
 
-use std::env;
+use crate::platform::term::is_truthy_env;
 
 #[derive(Clone, Copy, Debug)]
 enum IconMode {
@@ -106,161 +106,19 @@ impl Icons {
     }
 
     /// Detect terminal/config to choose icon tier
+    ///
+    /// Relies on env vars set by `apply_profile_env()` during startup.
+    /// No need for redundant terminal capability detection here.
     fn detect_mode() -> IconMode {
-        // Explicit plain text mode: ASCII
-        if is_truthy_env("ZIRO_PLAIN") {
+        if is_truthy_env("ZIRO_PLAIN") || is_truthy_env("ZIRO_ASCII_ICONS") {
             return IconMode::Ascii;
         }
 
-        // Force ASCII
-        if is_truthy_env("ZIRO_ASCII_ICONS") {
-            return IconMode::Ascii;
-        }
-
-        // Force Unicode
-        if is_truthy_env("ZIRO_UNICODE_ICONS") {
-            return IconMode::Unicode;
-        }
-
-        // Force narrow-width symbols
         if is_truthy_env("ZIRO_NARROW") {
             return IconMode::Narrow;
         }
 
-        // If not UTF-8/65001, prefer ASCII to avoid garbled output
-        if is_likely_non_utf8() {
-            return IconMode::Ascii;
-        }
-
-        // Default based on terminal capabilities
-        if Self::detect_unicode_support() {
-            IconMode::Unicode
-        } else {
-            IconMode::Ascii
-        }
-    }
-
-    /// Detect whether terminal supports Unicode emoji
-    fn detect_unicode_support() -> bool {
-        // Check explicit locale settings first
-        if let Ok(locale) = env::var("LC_ALL").or_else(|_| env::var("LANG"))
-            && (locale.to_lowercase().contains("utf-8") || locale.contains("65001"))
-        {
-            return true;
-        }
-
-        // Check terminal type
-        if let Ok(term) = env::var("TERM") {
-            let term = term.to_lowercase();
-
-            // Modern terminals with confirmed Unicode support
-            if term.contains("xterm")
-                || term.contains("screen")
-                || term.contains("tmux")
-                || term.contains("alacritty")
-                || term.contains("kitty")
-                || term.contains("iterm")
-                || term.contains("gnome")
-                || term.contains("konsole")
-                || term.contains("rxvt")
-                || term.contains("st")
-            {
-                return true;
-            }
-
-            // Windows-specific terminal types need more careful detection
-            if cfg!(target_os = "windows") {
-                if term.contains("cygwin") || term.contains("msys") || term.contains("mingw") {
-                    // These terminals usually support Unicode
-                    return true;
-                } else if term.contains("win32")
-                    || term.contains("conhost")
-                    || term.contains("dumb")
-                {
-                    // Conservative: traditional Windows console may not support Unicode emoji
-                    return false;
-                }
-            }
-        }
-
-        // Windows-specific detection
-        if cfg!(target_os = "windows") {
-            // Windows Terminal detection
-            if let Ok(wt_session) = env::var("WT_SESSION") {
-                return !wt_session.is_empty();
-            }
-
-            // Check terminal program
-            if let Ok(term_program) = env::var("TERM_PROGRAM") {
-                let term_program = term_program.to_lowercase();
-                if [
-                    "vscode",
-                    "hyper",
-                    "terminus",
-                    "windowsterminal",
-                    "wt",
-                    "warp",
-                    "warpterminal",
-                ]
-                .contains(&term_program.as_str())
-                {
-                    return true;
-                }
-            }
-
-            // Check shell environment (Git Bash, WSL, etc.)
-            if let Ok(shell) = env::var("SHELL") {
-                if shell.contains("bash") || shell.contains("zsh") || shell.contains("fish") {
-                    return true;
-                }
-            }
-
-            // Check Windows Terminal install path
-            if let Ok(program_files) = env::var("ProgramFiles") {
-                let wt_path = std::path::Path::new(&program_files)
-                    .join("WindowsApps")
-                    .join("Microsoft.WindowsTerminal");
-                if wt_path.exists() {
-                    return true;
-                }
-            }
-
-            // Check local app data for Windows Terminal
-            if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
-                let wt_path = std::path::Path::new(&local_app_data)
-                    .join("Microsoft")
-                    .join("WindowsApps");
-                if wt_path.exists() && wt_path.join("Microsoft.WindowsTerminal").exists() {
-                    return true;
-                }
-            }
-
-            // Check enhanced terminal support
-            if env::var("ConEmuANSI").is_ok() || env::var("ANSICON").is_ok() {
-                return true;
-            }
-
-            // Default: modern Windows systems tend to support Unicode
-            // unless a legacy console is explicitly detected
-            if let Ok(term) = env::var("TERM") {
-                if !term.is_empty() && !term.contains("win32") && !term.contains("conhost") {
-                    return true;
-                }
-            }
-        }
-
-        // Default behavior for non-Windows systems
-        #[cfg(not(target_os = "windows"))]
-        {
-            // Modern Unix/Linux systems almost always support Unicode
-            true
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            // Windows default: if TERM is set, usually supports Unicode
-            env::var("TERM").is_ok() && !env::var("TERM").unwrap_or_default().is_empty()
-        }
+        IconMode::Unicode
     }
 
     pub fn check(&self) -> StyledEmoji {
@@ -300,113 +158,6 @@ impl Icons {
     }
 }
 
-fn is_truthy_env(key: &str) -> bool {
-    if let Ok(v) = env::var(key) {
-        let v = v.to_lowercase();
-        return matches!(v.as_str(), "1" | "true" | "yes" | "on");
-    }
-    false
-}
-
-fn is_likely_non_utf8() -> bool {
-    if cfg!(target_os = "windows") {
-        // Windows Terminal or modern terminals usually support Unicode
-        if env::var("WT_SESSION")
-            .map(|v| !v.is_empty())
-            .unwrap_or(false)
-        {
-            return false;
-        }
-
-        // Check terminal program
-        if let Ok(term_program) = env::var("TERM_PROGRAM") {
-            let term_program = term_program.to_lowercase();
-            if [
-                "vscode",
-                "hyper",
-                "terminus",
-                "windowsterminal",
-                "wt",
-                "warp",
-                "warpterminal",
-            ]
-            .contains(&term_program.as_str())
-            {
-                return false;
-            }
-        }
-
-        // Consider available when LANG/LC_ALL contains utf-8
-        let locale = env::var("LC_ALL")
-            .or_else(|_| env::var("LANG"))
-            .unwrap_or_default()
-            .to_lowercase();
-        if locale.contains("utf-8") || locale.contains("65001") {
-            return false;
-        }
-
-        // Check TERM variable
-        if let Ok(term) = env::var("TERM") {
-            let term = term.to_lowercase();
-            // Modern terminal types - more aggressive identification
-            if term.contains("xterm")
-                || term.contains("screen")
-                || term.contains("tmux")
-                || term.contains("alacritty")
-                || term.contains("kitty")
-                || term.contains("iterm")
-                || term.contains("gnome")
-                || term.contains("konsole")
-            {
-                return false;
-            }
-            // Traditional Windows console
-            if term.contains("win32") || term.contains("conhost") || term.contains("dumb") {
-                return true;
-            }
-        }
-
-        // Check enhanced terminal support
-        if env::var("ConEmuANSI").is_ok() || env::var("ANSICON").is_ok() {
-            return false;
-        }
-
-        // Check if running in Git Bash, WSL, etc.
-        if let Ok(shell) = env::var("SHELL") {
-            if shell.contains("bash") || shell.contains("zsh") || shell.contains("fish") {
-                return false;
-            }
-        }
-
-        // Check Windows Terminal install path
-        if let Ok(program_files) = env::var("ProgramFiles") {
-            let wt_path = std::path::Path::new(&program_files)
-                .join("WindowsApps")
-                .join("Microsoft.WindowsTerminal");
-            if wt_path.exists() {
-                return false;
-            }
-        }
-
-        // Improved fallback: only consider non-UTF-8 when legacy console is explicitly detected
-        // All other cases (including empty TERM) lean towards Unicode support
-        return false;
-    }
-
-    // Non-Windows: check if LANG/LC_ALL contains UTF-8
-    let locale = env::var("LC_ALL")
-        .or_else(|_| env::var("LANG"))
-        .unwrap_or_default()
-        .to_lowercase();
-
-    // If no explicit locale info, conservatively assume UTF-8 support
-    if locale.is_empty() {
-        return false;
-    }
-
-    !locale.contains("utf-8")
-}
-
 /// Styled icon wrapper
 pub struct StyledEmoji {
     glyph: IconGlyph,
@@ -433,9 +184,11 @@ impl std::fmt::Display for StyledEmoji {
     }
 }
 
-/// Get icon manager instance
-pub fn icons() -> Icons {
-    Icons::new()
+/// Get cached icon manager instance
+pub fn icons() -> &'static Icons {
+    use std::sync::OnceLock;
+    static INSTANCE: OnceLock<Icons> = OnceLock::new();
+    INSTANCE.get_or_init(Icons::new)
 }
 
 #[cfg(test)]

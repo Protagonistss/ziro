@@ -4,14 +4,9 @@ use std::path::PathBuf;
 /// Ziro - Cross-platform port management tool
 #[derive(Parser)]
 #[command(name = "ziro")]
-#[command(about = "Find and kill processes occupying ports", long_about = None)]
+#[command(about = "Cross-platform port and process management tool", long_about = None)]
 #[command(version = env!("CARGO_PKG_VERSION"))]
-#[command(disable_version_flag = true)]
 pub struct Cli {
-    /// Show version information
-    #[arg(short = 'v', long = "version")]
-    pub version: bool,
-
     /// Force ASCII icons (equivalent to ZIRO_ASCII_ICONS=1)
     #[arg(long = "ascii")]
     pub ascii: bool,
@@ -68,10 +63,10 @@ pub enum Commands {
         #[arg(short = 'n', long = "dry-run")]
         dry_run: bool,
         /// Show detailed deletion progress
-        #[arg(long = "verbose")]
+        #[arg(short = 'V', long = "verbose")]
         verbose: bool,
-        /// Ignore lock warnings and attempt deletion directly
-        #[arg(long = "anyway")]
+        /// Force kill processes locking the files, then delete
+        #[arg(long = "anyway", visible_alias = "kill-lockers")]
         anyway: bool,
     },
     /// Monitor process memory usage in real time (like top)

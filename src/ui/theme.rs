@@ -1,15 +1,22 @@
+use crate::platform::term;
 use crate::ui::icons;
 use crate::ui::icons::StyledEmoji;
 use colored::{Color, Colorize};
-use std::env;
+use std::sync::OnceLock;
 
-/// Unified color and icon theme
+static THEME: OnceLock<Theme> = OnceLock::new();
+
+#[derive(Clone)]
 pub struct Theme {
     use_color: bool,
 }
 
 impl Theme {
     pub fn new() -> Self {
+        THEME.get().cloned().unwrap_or_else(Self::build)
+    }
+
+    fn build() -> Self {
         Self {
             use_color: Self::detect_color_support(),
         }
@@ -17,30 +24,16 @@ impl Theme {
 
     /// Detect whether color is enabled
     fn detect_color_support() -> bool {
-        if let Ok(value) = env::var("ZIRO_PLAIN") {
-            if Self::is_truthy(&value) {
-                return false;
-            }
-        }
-
-        if let Ok(value) = env::var("ZIRO_NO_COLOR") {
-            if Self::is_truthy(&value) {
-                return false;
-            }
-        }
-
-        // Honor the standard NO_COLOR convention
-        if let Ok(value) = env::var("NO_COLOR") {
-            if value.is_empty() || Self::is_truthy(&value) {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    fn is_truthy(value: &str) -> bool {
-        matches!(value.to_lowercase().as_str(), "1" | "true" | "yes" | "on")
+        let plain = std::env::var("ZIRO_PLAIN")
+            .map(|v| term::is_truthy(&v))
+            .unwrap_or(false);
+        let no_color = std::env::var("ZIRO_NO_COLOR")
+            .map(|v| term::is_truthy(&v))
+            .unwrap_or(false)
+            || std::env::var("NO_COLOR")
+                .map(|v| v.is_empty() || term::is_truthy(&v))
+                .unwrap_or(false);
+        !plain && !no_color
     }
 
     fn paint(&self, text: impl AsRef<str>, color: Color, bold: bool) -> String {
@@ -83,10 +76,6 @@ impl Theme {
     }
 
     pub fn warn(&self, text: impl AsRef<str>) -> String {
-        self.paint(text, Color::Yellow, false)
-    }
-
-    pub fn warning(&self, text: impl AsRef<str>) -> String {
         self.paint(text, Color::Yellow, false)
     }
 
@@ -139,15 +128,15 @@ impl Theme {
     }
 
     pub fn icon_folder(&self) -> String {
-        icons::icons().folder().to_string()
+        self.paint_icon(icons::icons().folder(), Color::Cyan)
     }
 
     pub fn icon_file(&self) -> String {
-        icons::icons().file().to_string()
+        self.paint_icon(icons::icons().file(), Color::Blue)
     }
 
     pub fn icon_link(&self) -> String {
-        icons::icons().link().to_string()
+        self.paint_icon(icons::icons().link(), Color::Magenta)
     }
 }
 

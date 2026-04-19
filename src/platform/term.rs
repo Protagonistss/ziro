@@ -28,6 +28,7 @@ impl Default for TerminalProfile {
 static GLOBAL_PROFILE: OnceLock<TerminalProfile> = OnceLock::new();
 
 pub fn set_global_profile(profile: TerminalProfile) {
+    // First call wins; second call would be a bug
     let _ = GLOBAL_PROFILE.set(profile);
 }
 
@@ -119,10 +120,13 @@ pub fn apply_profile_env(profile: &TerminalProfile) {
     }
 }
 
-fn is_truthy_env(key: &str) -> bool {
-    env::var(key)
-        .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes" | "on"))
-        .unwrap_or(false)
+pub fn is_truthy_env(key: &str) -> bool {
+    env::var(key).map(|v| is_truthy(&v)).unwrap_or(false)
+}
+
+/// Check if a string value represents a truthy/affirmative value
+pub fn is_truthy(value: &str) -> bool {
+    matches!(value.to_lowercase().as_str(), "1" | "true" | "yes" | "on")
 }
 
 /// Detect whether the terminal is modern (improved version)
@@ -325,11 +329,10 @@ fn is_very_modern_terminal() -> bool {
 /// Detect whether the console has virtual terminal processing enabled (Windows only)
 #[cfg(target_os = "windows")]
 fn has_virtual_terminal_processing() -> bool {
-    use winapi::um::consoleapi::GetConsoleMode;
-    use winapi::um::handleapi::INVALID_HANDLE_VALUE;
-    use winapi::um::processenv::GetStdHandle;
-    use winapi::um::winbase::STD_OUTPUT_HANDLE;
-    use winapi::um::wincon::ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Console::{
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING, GetConsoleMode, GetStdHandle, STD_OUTPUT_HANDLE,
+    };
 
     unsafe {
         let handle = GetStdHandle(STD_OUTPUT_HANDLE);

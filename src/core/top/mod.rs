@@ -3,8 +3,6 @@ use crate::platform::term::{self, TerminalProfile};
 use crate::platform::term::{
     is_powershell_core, is_windows_powershell_legacy, is_windows_terminal_or_conemu,
 };
-use crate::ui;
-use crate::ui::TopRenderOptions;
 use anyhow::Result;
 use std::io::{self, Write};
 use std::thread;
@@ -76,6 +74,26 @@ fn should_use_alt_screen(profile: &TerminalProfile) -> bool {
     true
 }
 
+/// Guard that restores terminal state on drop (including panics)
+struct AltScreenGuard {
+    active: bool,
+}
+
+impl AltScreenGuard {
+    fn new() -> Self {
+        enter_alternate_screen();
+        Self { active: true }
+    }
+}
+
+impl Drop for AltScreenGuard {
+    fn drop(&mut self) {
+        if self.active {
+            exit_alternate_screen();
+        }
+    }
+}
+
 /// Safely enter alternate screen
 fn enter_alternate_screen() {
     // Clear screen and move to top first
@@ -110,6 +128,17 @@ pub struct TopOptions {
     pub once: bool,
 }
 
+/// Rendering options for top display
+pub struct TopRenderOptions {
+    pub total_memory: u64,
+    pub used_memory: u64,
+    pub refresh: u64,
+    pub interval: f32,
+    pub show_cpu: bool,
+    pub show_cmd: bool,
+    pub incremental: bool,
+}
+
 /// Process info for display
 pub struct ProcessView {
     pub pid: u32,
@@ -120,7 +149,10 @@ pub struct ProcessView {
     pub cmd: String,
 }
 
-pub fn run_top(opts: TopOptions) -> Result<()> {
+pub fn run_top(
+    opts: TopOptions,
+    render: fn(&[ProcessView], &TopRenderOptions, &mut Vec<String>),
+) -> Result<()> {
     let process_refresh = ProcessRefreshKind::everything();
     let mut system = System::new_with_specifics(RefreshKind::new().with_processes(process_refresh));
 
@@ -130,9 +162,11 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
     let incremental = !opts.once && profile.incremental;
 
     // Enter alternate screen to avoid polluting scroll history (not needed for once mode)
-    if use_alt_screen {
-        enter_alternate_screen();
-    }
+    let _guard = if use_alt_screen {
+        Some(AltScreenGuard::new())
+    } else {
+        None
+    };
 
     let mut tick: u64 = 0;
     let mut last_frame: Vec<String> = Vec::new();
@@ -194,6 +228,8 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
             processes.sort_by(|a, b| {
                 let score_a = a.memory_bytes as f64 * 0.7 + a.cpu as f64 * 1000.0 * 0.3;
                 let score_b = b.memory_bytes as f64 * 0.7 + b.cpu as f64 * 1000.0 * 0.3;
+                let score_a = if score_a.is_nan() { 0.0 } else { score_a };
+                let score_b = if score_b.is_nan() { 0.0 } else { score_b };
                 score_b
                     .partial_cmp(&score_a)
                     .unwrap_or(std::cmp::Ordering::Equal)
@@ -214,7 +250,7 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
             incremental,
         };
 
-        ui::display_top(&processes, render_opts, &mut last_frame);
+        render(&processes, &render_opts, &mut last_frame);
 
         if opts.once {
             break;
@@ -230,10 +266,6 @@ pub fn run_top(opts: TopOptions) -> Result<()> {
         }
     }
 
-    // Leave alternate screen and restore original screen content
-    if use_alt_screen {
-        exit_alternate_screen();
-    }
-
+    // Guard auto-drops and restores terminal here
     Ok(())
 }

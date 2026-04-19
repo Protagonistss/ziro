@@ -37,8 +37,7 @@ console = "0.15"
 encoding_rs = "0.8.35"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["consoleapi", "handleapi", "processenv", "winbase", "wincon"] }
-windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_System_RestartManager"] }
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_System_RestartManager", "Win32_System_Console"] }
 
 [lints.clippy]
 collapsible_if = "allow"

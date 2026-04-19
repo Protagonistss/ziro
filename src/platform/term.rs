@@ -328,11 +328,10 @@ fn is_very_modern_terminal() -> bool {
 /// Detect whether the console has virtual terminal processing enabled (Windows only)
 #[cfg(target_os = "windows")]
 fn has_virtual_terminal_processing() -> bool {
-    use winapi::um::consoleapi::GetConsoleMode;
-    use winapi::um::handleapi::INVALID_HANDLE_VALUE;
-    use winapi::um::processenv::GetStdHandle;
-    use winapi::um::winbase::STD_OUTPUT_HANDLE;
-    use winapi::um::wincon::ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::System::Console::{
+        GetConsoleMode, GetStdHandle, ENABLE_VIRTUAL_TERMINAL_PROCESSING, STD_OUTPUT_HANDLE,
+    };
 
     unsafe {
         let handle = GetStdHandle(STD_OUTPUT_HANDLE);

@@ -22,8 +22,6 @@ jobs:
     name: Prepare Release
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -82,41 +80,8 @@ jobs:
           git tag "v$VERSION"
           git push origin HEAD:${{ github.ref_name }} --tags
 
-      - name: Output version
-        id: version
-        run: echo "version=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-
-  create-release:
-    name: Create Release
-    needs: [prepare]
-    if: always() && needs.prepare.result != 'failure'
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.get_version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Get version
-        id: get_version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          fi
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.get_version.outputs.version }}
-          name: Release ${{ steps.get_version.outputs.version }}
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   build:
     name: Build - ${{ matrix.platform.name }}
-    needs: create-release
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
@@ -195,7 +160,7 @@ jobs:
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.create-release.outputs.version }}
+          tag_name: ${{ github.ref_name }}
           files: |
             ${{ matrix.platform.asset }}
             ${{ matrix.platform.asset }}.sha256
@@ -204,7 +169,7 @@ jobs:
 
   publish-crates:
     name: Publish to crates.io
-    needs: [create-release, build]
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -215,7 +180,7 @@ jobs:
 
   publish-npm:
     name: Publish to npm
-    needs: [create-release, build]
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

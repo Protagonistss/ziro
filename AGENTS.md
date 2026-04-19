@@ -1,9 +1,10 @@
-﻿# Repository Guidelines
+# Repository Guidelines
 
 ## 项目结构与模块组织
 - Rust 核心：入口在 `src/bin/ziro.rs`；`src/cli/`（`args.rs` 参数定义，`handlers.rs` 命令分发）；`src/core/`（`port/` 端口扫描，`process/` 进程终止，`fs_ops/` 文件删除与安全校验，`top/` 监控）；`src/platform/`（`term.rs` 终端/环境配置，`encoding.rs` Windows UTF-8 初始化）；`src/ui/`（`render.rs` 输出、交互，`theme.rs` 颜色，`icons.rs` 图标）。
 - Node 分发层：`bin/ziro.js` 作为 npm 启动代理，`scripts/install.js`+`detect-platform.js` 下载发布产物，`package.json` 声明元数据。
 - 发行/工具：`target/` 存放构建产物（已忽略），`.github/` 存放 CI/发布配置。
+- **文档说明**：详细文档存放在 `docs/zh/` (中文) 和 `docs/en/` (英文) 目录下，按模块（安装、使用、开发、贡献）拆分。
 
 ## 构建、测试与开发命令
 - `cargo build --release`：生成优化二进制到 `target/release/ziro`。
